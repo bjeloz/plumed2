@@ -174,16 +174,23 @@ double SMAC::computeVectorFunction( const Vector& conn, const std::vector<double
   std::vector<Vector> dv1(nvectors), dv2(nvectors), tdconn(nvectors); Torsion t; std::vector<Vector> v1(nvectors), v2(nvectors);
   std::vector<Value*> pos; for(unsigned i=0; i<nvectors; ++i) { pos.push_back( new Value() ); pos[i]->setDomain( "-pi", "pi" ); }
 
+  // Complicated way to get the position of the start and end atoms
   for(unsigned j=0; j<nvectors; ++j) {
     for(unsigned k=0; k<3; ++k) {
       v1[j][k]=vec1[2+3*j+k]; v2[j][k]=vec2[2+3*j+k];
     }
+    // v1[0] is the start of central molecule
+    // v1[1] is the end of central molecule
+    // v2[0] is the start of neighbor molecule
+    // v2[1] is the end of neighbor molecule
+    // Here a torsion is calculated it should be an vector angle
     double angle = t.compute( v1[j], conn, v2[j], dv1[j], tdconn[j], dv2[j] );
     pos[j]->set( angle );
   }
 
   double ans=0; std::vector<double> deriv( nvectors ), df( nvectors, 0 );
   for(unsigned i=0; i<kernels.size(); ++i) {
+    // Kernel takes a vector as input
     ans += kernels[i].evaluate( pos, deriv );
     for(unsigned j=0; j<nvectors; ++j) df[j] += deriv[j];
   }

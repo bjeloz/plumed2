@@ -70,11 +70,11 @@ OrientationSphere::OrientationSphere(const ActionOptions&ao):
 
 double OrientationSphere::compute( const unsigned& tindex, multicolvar::AtomValuePack& myatoms ) const {
   double d2, sw, value=0, denom=0, dfunc; Vector ddistance;
-  unsigned ncomponents=getBaseMultiColvar(0)->getNumberOfQuantities();
+  unsigned ncomponents=getBaseMultiColvar(0)->getNumberOfQuantities(); // I think these are 9 compoenents, 3 coordinates per atom, 3 atoms per molecule
   std::vector<double> catom_orient( ncomponents ), this_orient( ncomponents );
   std::vector<double> this_der( ncomponents ), catom_der( ncomponents );
 
-  getInputData( 0, true, myatoms, catom_orient );
+  getInputData( 0, true, myatoms, catom_orient ); // Get central molecule orientation
   MultiValue& myder0=getInputDerivatives( 0, true, myatoms );
 
   for(unsigned i=1; i<myatoms.getNumberOfAtoms(); ++i) {
@@ -86,7 +86,7 @@ double OrientationSphere::compute( const unsigned& tindex, multicolvar::AtomValu
 
       sw = switchingFunction.calculateSqr( d2, dfunc );
 
-      getInputData( i, true, myatoms, this_orient );
+      getInputData( i, true, myatoms, this_orient ); // Get neighboring molecule orientation
       // Calculate the dot product wrt to this position
       double f_dot = computeVectorFunction( distance, catom_orient, this_orient, ddistance, catom_der, this_der );
 
