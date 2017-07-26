@@ -189,7 +189,7 @@ namespace PLMD{
       GsmacIntervallist.pos2.resize(mols);
       GsmacIntervallist.nn.resize(mols);
       GsmacIntervallist.ni.resize(mols);
-      for(int i=0; i < mols ; i++){
+      for(unsigned int i=0; i < mols ; i++){
 	GsmacIntervallist.ni[i].resize(mols);
       }
       
@@ -230,9 +230,9 @@ namespace PLMD{
       
       GsmacIntervallist.step=0;
 
-      unsigned int rank;       
-      rank=comm.Get_rank();
-      stringstream A;
+      //unsigned int rank;       
+      //rank=comm.Get_rank();
+      //stringstream A;
 
       parse("ZETAC",zetac);
       parse("ZETAL",zetal);
@@ -275,9 +275,9 @@ double GsmacInterval::kernel(double z, double &dkval) {
     
 void GsmacInterval::calculate()
 {
-  
-  double cv_val;             // CV
-  cv_val=0;
+ 
+  double S3 = 0;        // CV value not multiplied with the kernel function
+  double cv_val = 0;    // CV
   
   Tensor virial;              // VIRIAL
   vector<Vector> deriv(getNumberOfAtoms());  // DERIVATIVES
@@ -311,7 +311,7 @@ void GsmacInterval::calculate()
   for(unsigned int i=rank;i<mols;i+=stride) {                   // SUM OVER MOLECULES
     double n,angtot;
     int start_i,end_i;
-    double S1, S2, S3;
+    double S1, S2;
     start_i=start[i].serial();
     end_i=end[i].serial();
 
