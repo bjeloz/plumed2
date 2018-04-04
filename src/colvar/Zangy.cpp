@@ -56,11 +56,10 @@ namespace PLMD{
 
       unsigned int nmol;   // total number of molecules involved in the calculations
       unsigned int nmol2;  // nmol2 = nmol*2
-      unsigned int atoms;  // total number of atoms involved in the calculations
 
       double zetac, zetal, sigmac, sigmal;  // values for kernel function
       double zetac_c, zetal_c, zbox;
-      double lbound, ubound, lbound_c, ubound_c;
+      double lbound, ubound, lbound_c, ubound_c; // lower and upper bound in which molecules are considered, lbound and ubound are given in fractional coordinates; lbound_c and ubound_c are the corresponding values in cartesian coordinates
       vector<double> kval {0.0, 0.0, 0.0};  // initialize kernel function and its derivative
       vector<double> dkval {0.0, 0.0, 0.0};  // initialize kernel function and its derivative
       vector<double> phi_i {0.0, 0.0, 0.0}; // initialize kernel function and its derivative
@@ -70,21 +69,16 @@ namespace PLMD{
       void kernel(double);  // kernel function
 
       double sigmaf, f_ij, df_ij, r_0; // values for switching function f_ij
-      void stepfunction(double);  // switching function f_ij
-
-
-
-      ofstream fdbg;   // definition of object needed for debugging
-      ofstream rdbg;
+      void stepfunction(double);       // switching function f_ij
+      double dotprod(Vector, Vector);  // dot product of two 3D vectors
+      double norm2(Vector);            // norm2 of 3D vector
       
-      Zangy(const ActionOptions&);              //    CONSTRUCTOR
-      ~Zangy();                                 //    DESTRUCTOR
+      Zangy(const ActionOptions&);     //    CONSTRUCTOR
+      ~Zangy();                        //    DESTRUCTOR
+
       // active methods:
       static void registerKeywords( Keywords& keys );  // KEYWORDS
-      virtual void calculate();                        // CALCULATE CV 
-
-      double dotprod(Vector, Vector);
-      double norm2(Vector);
+      virtual void calculate();                        // CALCULATE CV
 
     };
     
@@ -94,7 +88,6 @@ namespace PLMD{
 
       Colvar::registerKeywords(keys);
       keys.add("atoms","CENTER","the labels of the atoms acting as center of the molecules");
-      //keys.add("atoms","CENTER2","the labels of the atoms acting as center of the neighboring molecules");
 keys.add("atoms","START","the labels of the atoms acting as start of the intramolecular vector");
       keys.add("atoms","END","the labels of the atoms acting as end  of the intramolecular vector");
       keys.add("compulsory","ANGLES"," Angles that have to be used in the SMAC calculation (need to be associated with width)");
@@ -142,6 +135,12 @@ keys.add("atoms","START","the labels of the atoms acting as start of the intramo
 
       if (nmol == 0) error("no molecules specified");
 
+      // all atoms involved in the CV have to be put in a 3*natoms matrix, from which 
+      // also the derivatives matrix is constructed. Here, in the all_atoms matrix each row
+      // corresponds to the 3 entries of the atom position in x, y, and z direction.
+      // 1st nmol rows correspond to the center atoms, 2nd nmol rows correspond to the start atoms,
+      // and 3rd nmol rows correspond to the end atoms.
+      // start- and end atoms define the vector for each molecule.
       for (unsigned int i = 0; i < nmol; i++) {
         all_atoms.push_back(center[i]);  // vector.push_back(element) adds element to the end of the vector
       }
@@ -152,8 +151,6 @@ keys.add("atoms","START","the labels of the atoms acting as start of the intramo
         all_atoms.push_back(end[i]);  // all atoms involved in the calculations are now in a vector of size 3*mols
       }
 
-      atoms = all_atoms.size();
-
       addValueWithDerivatives();  // informs plumed core that we require space to store the value      
 
       setNotPeriodic();        // of the CV and that the CV will act on the list of atoms
@@ -163,9 +160,10 @@ keys.add("atoms","START","the labels of the atoms acting as start of the intramo
                     // all parse command should follow before checkRead()
 
     }
+
     
 void Zangy::kernel(double z) {
-  // switching function to limit action of Gsmac CV
+  // switching function to limit action of CV
   double f_lc = 0;
   double f_ll = 0;
 
@@ -195,8 +193,8 @@ void Zangy::kernel(double z) {
 
 
 void Zangy::stepfunction(double r_ij) {
-  // switching function to determin the number of nearest neighbours
 
+  // switching function to determine the number of nearest neighbours
   double f_f = 0;
   f_ij = 0;
   df_ij = 0;
@@ -205,7 +203,7 @@ void Zangy::stepfunction(double r_ij) {
   f_f = 1/(1 + exp(-sigmaf*(r_ij - r_0)));
   f_ij = 1 - f_f;
 
-  df_ij = - sigmaf*f_f*(1-f_f);
+  df_ij = - sigmaf*f_f*f_ij;  // = - sigmaf*f_f*(1-f_f)
   if ( f_ij < 0.000001 ) {
     df_ij = 0.0;
     f_ij = 0.0;
@@ -217,18 +215,17 @@ void Zangy::stepfunction(double r_ij) {
 }
 
 
-double Zangy::norm2(Vector vect){  // CALCULATE THE NORM OF A VECTOR
+double Zangy::norm2 (Vector vect) {  // CALCULATE THE NORM OF A VECTOR
   return (vect[0]*vect[0]+vect[1]*vect[1]+vect[2]*vect[2]);
 }
 
 
-double Zangy::dotprod(Vector vect1,Vector vect2){  // CALCULATE THE SCALAR PRODUCT OF TWO VECTORS
+double Zangy::dotprod (Vector vect1,Vector vect2) {  // CALCULATE THE SCALAR PRODUCT OF TWO VECTORS
   return(vect1[0]*vect2[0]+vect1[1]*vect2[1]+vect1[2]*vect2[2]);
 }
 
     
-void Zangy::calculate()
-{
+void Zangy::calculate() {
 
   zbox = getBox()[2][2];
   zetac_c = zetac*zbox;
@@ -239,12 +236,15 @@ void Zangy::calculate()
 
   double cv_val;   // CV
   cv_val=0;
-  
+ 
+  Vector pos_i; // 3D position vector of molecule i
+  Vector dist;  // 3D vector of molecule (defined by start- and end atoms)
+ 
   Tensor virial;   // VIRIAL
   virial.zero();   // no virial contribution
   vector<Vector> deriv(getNumberOfAtoms());  // DERIVATIVES, vector of customized Plumed vectors
   
-  unsigned int stride=comm.Get_size();  // SET THE PARALLELIZATION VARIABLES for the for loops
+  unsigned int stride=comm.Get_size();  // SET THE PARALLELIZATION VARIABLES for the for loop
   unsigned int rank=comm.Get_rank();
   
   stride=comm.Get_size();
@@ -252,7 +252,7 @@ void Zangy::calculate()
 
   for(unsigned int i=rank;i<nmol;i+=stride) {  // SUM OVER MOLECULES
 
-    Vector pos_i = getPosition(i);  // position of molecule i
+    pos_i = getPosition(i);  // position of molecule i
 
     if ( (lbound_c < pos_i[2]) && (pos_i[2] < ubound_c) ) { 
   
@@ -262,27 +262,21 @@ void Zangy::calculate()
 
       Vector v_i = pbcDistance(getPosition(i+nmol),getPosition(i+nmol2));
 
-      vector<double> f(nmol);      // switching function f
-      vector<Vector> df_i(nmol);   // derivative of f with respect to x_i (3 values per entry)
-      vector<Vector> df_j(nmol);   // derivative of f with respect to x_j (3 values per entry)
+      //vector<double> f(nmol);      // switching function f
+      //vector<Vector> df_i(nmol);   // derivative of f with respect to x_i (3 values per entry)
+      //vector<Vector> df_j(nmol);   // derivative of f with respect to x_j (3 values per entry)
+      double f = 0;  // switching function f (initialize with 0 because it's iterated further below)
+      Vector df_i;   // derivative of f with respect to x_i (3D vector)
+      Vector df_j;   // derivative of f with respect to x_j (3D vector)
 
-      vector<double> omega(nmol);  // angle gaussians sum
-      vector<Vector> domega_i;     // derivative of angle gaussian sum with respect to x_i
-      vector<Vector> domega_j;     // derivative of angle gaussian sum with respect to x_j
-      vector<Vector> domega_is;    // derivative of angle gaussian sum with respect to x_is
-      vector<Vector> domega_ie;    // derivative of angle gaussian sum with respect to x_ie
-      vector<Vector> domega_js;    // derivative of angle gaussian sum with respect to x_js
-      vector<Vector> domega_je;    // derivative of angle gaussian sum with respect to x_je
-      // x_is is vector of atom corresponding to start atom of molecule i
-      // x_ie is vector of atom corresponding to end atom of molecule i
-      // x_js is vector of atom corresponding to start atom of molecule j
-      // x_je is vector of atom corresponding to end atom of molecule j
-
-      Vector dist; // 3D vector
+      //vector<double> omega(nmol);  // angle gaussians sum
+      double omega;     // angle gaussians sum
+      Vector domega_i;  // derivative of angle gaussian sum with respect to x_si or x_ei (3D vector)
+      Vector domega_j;  // derivative of angle gaussian sum with respect to x_sj or x_ej (3D vector)
   
-      for( int j=0; j < nmol; ++j) {                   // SUM OVER NEIGHBORS
+      for(unsigned int j=0; j < nmol; ++j) {                   // SUM OVER NEIGHBORS
 
-	Vector pos_j = getPosition(j);
+        Vector pos_j = getPosition(j);
 
      	if ( (j != i) && (lbound_c < pos_j[2]) && (pos_j[2] < ubound_c) ) {
           double modij;
@@ -296,61 +290,70 @@ void Zangy::calculate()
           //log << "j: " << j << ", zpos: " << zpos << ", kval[2]: " << kval[2] << "\n";
  
           stepfunction(modij);  // calculate switching function for molecule pair i and j
-          f[j] += f_ij*phi_i[2]*phi_j[2];  // coordination number of molecule i
+          f += f_ij*phi_i[2]*phi_j[2];  // coordination number of molecule i
   
-          double dfdix = 0;
+          double dfdxi = 0;
           for(unsigned int ix=0; ix<3; ix++){
-            dfdix = -df_ij*dist[ix]/modij*phi_i[2]*phi_j[2];
-            df_i[i][ix] += dfdix + f_ij*dphi_i[ix]*phi_j[2];  // derivative of switching function with respect to x_i
-      	    df_j[j][ix] += -dfdix + f_ij*phi_i[2]*dphi_j[ix];  // derivative of switching function with respect to x_j
-	  }
+            dfdxi = -df_ij*dist[ix]/modij*phi_i[2]*phi_j[2];
+            df_i[ix] += dfdxi + f_ij*dphi_i[ix]*phi_j[2];  // derivative of switching function with respect to x_i
+      	    df_j[ix] += -dfdxi + f_ij*phi_i[2]*dphi_j[ix];  // derivative of switching function with respect to x_j
+          }
 
-	  Vector v_j = pbcDistance(getPosition(j+nmol), getPosition(j+nmol2));
+          Vector v_j = pbcDistance(getPosition(j+nmol), getPosition(j+nmol2));
           
-	  double alpha;
-          alpha = dotprod(v_i, v_j)/sqrt(norm2(v_i)*norm2(v_j));
+          double costheta;
+          costheta = dotprod(v_i, v_j)/sqrt(norm2(v_i)*norm2(v_j));
 
-	  if (alpha > 1.0) {
-            alpha = 0.99999;
-          } else if (alpha < -1.0) {
-            alpha = -0.99999;
+          if (costheta > 1.0) {
+            costheta = 0.99999;
+          } else if (costheta < -1.0) {
+            costheta = -0.99999;
           }
 
           double theta;
-	  theta = acos(alpha);
-	  
-	  omega[j] = 0;
-	  double domega = 0;
+          theta = acos(costheta);
+
+          omega = 0;
+          double domega = 0;
 
           for (unsigned int k = 0; k < angles.size(); k++) {
-            double gaussians;
-            gaussians = exp(-((theta - angles[k])*(theta - angles[k]))/(2*width[k]*width[k]));
-            omega[j] += gaussians;
-	    domega += - gaussians*(theta - angles[k])/(width[k]*width[k]);
-	  }
+            double gaussian;
+            gaussian = exp(-((theta - angles[k])*(theta - angles[k]))/(2*width[k]*width[k]));
+            omega += gaussian;
+            domega += - gaussian*(theta - angles[k])/(width[k]*width[k]); // derivative of omega with respect to theta without dtheta/dxsi, dtheta/dxsj, dtheta/dxei, or dtheta/dxej, which are calculated further below
+          }
 
           double dvac;  // no idea what dvac is
-	  dvac = - 1/(sqrt( norm2(v_i)*norm2(v_j))*sqrt(1.0 - alpha*alpha));
+          dvac = - 1/( sqrt(norm2(v_i)*norm2(v_j)) * sqrt(1.0 - costheta*costheta) );
 
+          // indexing:
+          // i = ci, center atom of molecule i
+          // j = cj, center atom of molecule j
+          // i + nmol  = si, start atom of molecule i
+          // i + nmol2 = ei, end atom of molecule i
+          // j + nmol  = sj, start atom of molecule j
+          // j + nmol2 = ej, end atom of molecule j
+
+          // calculate all derivatives
           for (unsigned int ix = 0; ix < 3; ix++) {
-            domega_i[j][ix] = - domega * dvac * (v_i[ix] - dotprod(v_i, v_j) * v_j[ix]/norm2(v_j));
-            domega_j[j][ix] =   domega * dvac * (v_j[ix] - dotprod(v_j, v_j) * v_i[ix]/norm2(v_i));
-	  }
+            domega_i[ix] = - domega * dvac * (v_i[ix] - dotprod(v_i, v_j) * v_j[ix]/norm2(v_j));
+            domega_j[ix] =   domega * dvac * (v_j[ix] - dotprod(v_j, v_j) * v_i[ix]/norm2(v_i));
 
-          for (unsigned int ix = 0; ix < 3; ix++) {
-            
-	  }
+            deriv[i][ix] += omega * df_i[ix];  // add derivative term with respect to x_ci[ix]
+            deriv[j][ix] += omega * df_j[ix];  // add derivative term with respect to x_cj[ix]
 
-          cv_val += omega[j]*f[j];
+            deriv[i+nmol][ix]  -= f * domega_i[ix];  // add derivative term with respect to x_si[ix]
+            deriv[i+nmol2][ix] += f * domega_i[ix];  // add derivative term with respect to x_ei[ix]
+            deriv[j+nmol][ix]  -= f * domega_j[ix];  // add derivative term with respect to x_sj[ix]
+            deriv[j+nmol2][ix] += f * domega_j[ix];  // add derivative term with respect to x_ej[ix]
+          }
 
-	}
-      }
-  
-//      cv_val += 0;  // SUM THE TOTAL CV
-  
-    }
-  }
- 
+          cv_val += omega*f;  // value of molecule pair ij contributed to Zangy CV
+
+        }  // end of molecule j position if statement 
+      }  // end of index j interval loop
+    }  // end of molecule i position if statement
+  }  // end of index i interval loop
  
   comm.Sum(deriv);
   comm.Sum(cv_val);
@@ -359,14 +362,14 @@ void Zangy::calculate()
   for(unsigned i=0;i<nmol;i++) {
     setAtomsDerivatives(i,deriv[i]);
   }
-  
+ 
   setBoxDerivatives(virial);
   setValue(cv_val);
 
-}
-  
-  
-    
+} // end of Zangy::calculate() object
+ 
+ 
+
     Zangy::~Zangy(){
     }
 
