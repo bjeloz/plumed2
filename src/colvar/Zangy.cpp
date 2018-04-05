@@ -88,7 +88,7 @@ namespace PLMD{
 
       Colvar::registerKeywords(keys);
       keys.add("atoms","CENTER","the labels of the atoms acting as center of the molecules");
-keys.add("atoms","START","the labels of the atoms acting as start of the intramolecular vector");
+      keys.add("atoms","START","the labels of the atoms acting as start of the intramolecular vector");
       keys.add("atoms","END","the labels of the atoms acting as end  of the intramolecular vector");
       keys.add("compulsory","ANGLES"," Angles that have to be used in the SMAC calculation (need to be associated with width)");
       keys.add("compulsory","N_ANGLES"," Number of angles that have to be used in the SMAC calculation (need to be associated with width)");
@@ -153,8 +153,8 @@ keys.add("atoms","START","the labels of the atoms acting as start of the intramo
 
       addValueWithDerivatives();  // informs plumed core that we require space to store the value      
 
-      setNotPeriodic();        // of the CV and that the CV will act on the list of atoms
-      requestAtoms(center);    // named center
+      setNotPeriodic();         // not sure what this is good for
+      requestAtoms(all_atoms);  // all atoms, i.e. center, start, and end are called as one (nmols*3)x(3) vector
 
       checkRead();  // check that everything on the input line has been read properly,
                     // all parse command should follow before checkRead()
@@ -287,7 +287,7 @@ void Zangy::calculate() {
           phi_j = kval;      // spatial switching function for molecule j
           dphi_j = dkval;    // derivative of spatial switching function j with respect to x_j
 
-          //log << "j: " << j << ", zpos: " << zpos << ", kval[2]: " << kval[2] << "\n";
+          //log << "j: " << j << ", kval[2]: " << kval[2] << "\n";
  
           stepfunction(modij);  // calculate switching function for molecule pair i and j
           f += f_ij*phi_i[2]*phi_j[2];  // coordination number of molecule i
@@ -303,6 +303,9 @@ void Zangy::calculate() {
           
           double costheta;
           costheta = dotprod(v_i, v_j)/sqrt(norm2(v_i)*norm2(v_j));
+
+          //cout << "v_i[0]: " << v_i[0] << ", v_i[1]: " <<  v_i[1] << ", v_i[2]: " << v_i[2] << "\n";
+          //cout << "v_j[0]: " << v_j[0] << ", v_j[1]: " <<  v_j[1] << ", v_j[2]: " << v_j[2] << "\n";
 
           if (costheta > 1.0) {
             costheta = 0.99999;
@@ -321,6 +324,7 @@ void Zangy::calculate() {
             gaussian = exp(-((theta - angles[k])*(theta - angles[k]))/(2*width[k]*width[k]));
             omega += gaussian;
             domega += - gaussian*(theta - angles[k])/(width[k]*width[k]); // derivative of omega with respect to theta without dtheta/dxsi, dtheta/dxsj, dtheta/dxei, or dtheta/dxej, which are calculated further below
+            cout << "costheta: " << costheta << ", theta: " << theta << ", gaussian:" << gaussian << ", omega: " << omega << "\n";
           }
 
           double dvac;  // no idea what dvac is
@@ -348,7 +352,9 @@ void Zangy::calculate() {
             deriv[j+nmol2][ix] += f * domega_j[ix];  // add derivative term with respect to x_ej[ix]
           }
 
-          cv_val += omega*f;  // value of molecule pair ij contributed to Zangy CV
+          if (f > 0.0) {
+            cv_val += omega*f;  // value of molecule pair ij contributed to Zangy CV
+          }
 
         }  // end of molecule j position if statement 
       }  // end of index j interval loop
