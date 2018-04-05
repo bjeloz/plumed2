@@ -324,7 +324,7 @@ void Zangy::calculate() {
             gaussian = exp(-((theta - angles[k])*(theta - angles[k]))/(2*width[k]*width[k]));
             omega += gaussian;
             domega += - gaussian*(theta - angles[k])/(width[k]*width[k]); // derivative of omega with respect to theta without dtheta/dxsi, dtheta/dxsj, dtheta/dxei, or dtheta/dxej, which are calculated further below
-            cout << "costheta: " << costheta << ", theta: " << theta << ", gaussian:" << gaussian << ", omega: " << omega << "\n";
+            //cout << "costheta: " << costheta << ", theta: " << theta << ", gaussian:" << gaussian << ", omega: " << omega << "\n";
           }
 
           double dvac;  // no idea what dvac is
@@ -352,9 +352,9 @@ void Zangy::calculate() {
             deriv[j+nmol2][ix] += f * domega_j[ix];  // add derivative term with respect to x_ej[ix]
           }
 
-          if (f > 0.0) {
-            cv_val += omega*f;  // value of molecule pair ij contributed to Zangy CV
-          }
+          //cout << "deriv[i][0]" << deriv[i][0] << ", deriv[i][1]: " << deriv[i][1] << ", deriv[i][2]: " << deriv[i][2] << "\n";
+
+          cv_val += omega*f;  // value of molecule pair ij contributed to Zangy CV
 
         }  // end of molecule j position if statement 
       }  // end of index j interval loop
