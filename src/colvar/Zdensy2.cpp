@@ -66,6 +66,10 @@ namespace PLMD{
       void ffunction(double);  // switching function f_ij
       void rhofunction(double);  // switching function f_ij
 
+      vector<double> list;  // inded list of all molecules in defined layer interval
+      unsigned int ll;  // length of list
+      void layerindices();  // index list of all molecules positioned within the defined layer interval
+
       unsigned int stride;
       unsigned int rank;
 
@@ -118,8 +122,9 @@ namespace PLMD{
       parse("N_0", n_0);
       parse("SIGMAF", sigmaf);
 
-      nmol=center.size();
-      
+      nmol=center.size(); 
+      list.resize(nmol);  // allocate enough space for layer molecules list
+
       if(nmol==0) error("no molecules specified");
 
       addValueWithDerivatives();  // informs plumed core that we require space to store the value      
@@ -207,7 +212,9 @@ void Zdensy2::rhofunction(double n_i) {
 }
 
 
-void Zdensy2::getlayerindices() {
+void Zdensy2::layerindices() {
+
+  unsigned int k = 0;
 
   stride = comm.Get_size();
   rank = comm.Get_rank();
@@ -216,9 +223,15 @@ void Zdensy2::getlayerindices() {
     Vector pos_i = getPosition(i);
 
     if ( (lbound_c < pos_i[2]) && (pos_i[2] < ubound_c) ) {
-      
+
+      list[k] = i;
+      k++;
+
     }
   }
+
+  ll = k;  // length of neighbour list
+
 }
 
     
@@ -239,7 +252,9 @@ void Zdensy2::calculate()
   virial.zero();   // no virial contribution
   vector<Vector> deriv(getNumberOfAtoms());  // DERIVATIVES, vector of customized Plumed vectors
   vector<double> drho(getNumberOfAtoms());  // DERIVATIVES, vector of customized Plumed vectors
-  
+
+  vector<Vector> df(getNumberOfAtoms());
+
   //unsigned int stride=comm.Get_size();  // SET THE PARALLELIZATION VARIABLES for the for loops
   //unsigned int rank=comm.Get_rank();
   
@@ -296,8 +311,8 @@ void Zdensy2::calculate()
 
       // calculate the derivative
       for (unsigned int ix=0; ix<3; ix++){
-        deriv[i][ix] += ;  // derivative of switching function with respect to x_i
-        deriv[j][ix] += ;  // derivative of switching function with respect to x_j 
+        deriv[i][ix] += df[i][ix];  // derivative of switching function with respect to x_i
+        //deriv[j][ix] += df[j][ix];  // derivative of switching function with respect to x_j 
       }
 
       // sum the total CV
