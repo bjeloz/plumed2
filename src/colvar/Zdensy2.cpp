@@ -216,17 +216,27 @@ void Zdensy2::layerindices() {
 
   unsigned int k = 0;
 
-  stride = comm.Get_size();
-  rank = comm.Get_rank();
+  //unsigned int stride;
+  //unsigned int rank;
 
-  for (unsigned int i=rank; i<nmol; i+=stride) {
-    Vector pos_i = getPosition(i);
+  //stride = comm.Get_size();
+  //rank = comm.Get_rank();
 
-    if ( (lbound_c < pos_i[2]) && (pos_i[2] < ubound_c) ) {
+  Vector pos_i;
+  //for (unsigned int i=rank; i<nmol; i+=stride) {
+  for (unsigned int i=0; i<nmol; i++) {
 
+    pos_i = getPosition(i);
+
+    //cout << "pos_i[0]: " << pos_i[0] << ", pos_i[1]: " << pos_i[1] << ", pos_i[2]: " << pos_i[2] << "\n";
+
+    if ( (lbound_c < pos_i[2]) && (pos_i[2] < ubound_c) ) { 
       list[k] = i;
-      k++;
+      //for (unsigned int i=0; ix<3; i++) {
+      //  pos_;
+      //}
 
+      k++;
     }
   }
 
@@ -251,79 +261,89 @@ void Zdensy2::calculate()
   Tensor virial;   // VIRIAL
   virial.zero();   // no virial contribution
   vector<Vector> deriv(getNumberOfAtoms());  // DERIVATIVES, vector of customized Plumed vectors
-  vector<double> drho(getNumberOfAtoms());  // DERIVATIVES, vector of customized Plumed vectors
 
-  vector<Vector> df(getNumberOfAtoms());
+  for (unsigned int i=0; i<nmol; i++) {
+    for (unsigned int ix=0; ix<3; ix++) {
+      deriv[i][ix] = 0;
+    }
+  }
 
-  //unsigned int stride=comm.Get_size();  // SET THE PARALLELIZATION VARIABLES for the for loops
-  //unsigned int rank=comm.Get_rank();
+  layerindices();  // construct list of molecules iniside the defined interval
+
+  for (unsigned int i=0; i<ll; i++) {
+    cout << "list[i]: " << list[i] << "\n";
+  }
+  cout << "--> ll: " << ll << "\n";
+
+  vector<int> drho(ll);  // DERIVATIVES, vector of customized Plumed vectors
+  vector<Vector> df(ll);
+  //vector<int> drho(nmol);  // DERIVATIVES, vector of customized Plumed vectors
+  //vector<Vector> df(nmol);
+
+  unsigned int stride;  // SET THE PARALLELIZATION VARIABLES for the for loops
+  unsigned int rank;
+
+  stride=comm.Get_size();  // SET THE PARALLELIZATION VARIABLES for the for loops
+  rank=comm.Get_rank();
+
+  for (unsigned int i=rank; i<ll; i+=stride) {  // SUM OVER MOLECULES
+ 
+    kernel(pos_i[2]);  // calculate value of kernel function kval and its derivative dkval
+    phi_i = kval;
+    dphi_i = dkval;
+
+    double n;
+    n=0.;
   
-  stride=comm.Get_size();
-  rank=comm.Get_rank();  
-
-  for (unsigned int i=rank;i<nmol;i+=stride) {  // SUM OVER MOLECULES
-
-    Vector pos_i = getPosition(i);
-
-    if ( (lbound_c < pos_i[2]) && (pos_i[2] < ubound_c) ) { 
+    //vector<double> f;       // SWITCHING FUNCTION
   
-      kernel(pos_i[2]);  // calculate value of kernel function kval and its derivative dkval
-      phi_i = kval;
-      dphi_i = dkval;
-
-      double n;
-      n=0.;
+    Vector dist; // 3D vector
   
-      //vector<double> f;       // SWITCHING FUNCTION
-  
-      Vector dist; // 3D vector
-  
-      for(unsigned int j=0; j < nmol; ++j) {                   // SUM OVER NEIGHBORS
+    for(unsigned int j=0; j < nmol; ++j) {                   // SUM OVER NEIGHBORS
 
-        Vector pos_j = getPosition(j);
+      Vector pos_j = getPosition(j);
 
-        if ( (j != i) && (lbound_c < pos_j[2]) && (pos_j[2] < ubound_c) ) {
-          double modij;
-          dist=pbcDistance(pos_i,pos_j);    // DISTANCE BETWEEN THEM
-          modij=dist.modulo();  // scalar length of the distance vector
+      if ( (j != i) && (lbound_c < pos_j[2]) && (pos_j[2] < ubound_c) ) {
+        double modij;
+        dist=pbcDistance(pos_i,pos_j);    // DISTANCE BETWEEN THEM
+        modij=dist.modulo();  // scalar length of the distance vector
 
-          kernel(pos_j[2]);  // calculate value of kernel function kval and its derivative dkval
-          phi_j = kval;
-          dphi_j = dkval;
+        kernel(pos_j[2]);  // calculate value of kernel function kval and its derivative dkval
+        phi_j = kval;
+        dphi_j = dkval;
 
-          //log << "j: " << j << ", zpos: " << zpos << ", kval[2]: " << kval[2] << "\n";
+        //log << "j: " << j << ", zpos: " << zpos << ", kval[2]: " << kval[2] << "\n";
     
-          // calculate
-          ffunction(modij);  // calculate switching function for molecule pair i and j
-          n += f_ij*phi_i[2]*phi_j[2];  // coordination number of molecule i
+        // calculate
+        ffunction(modij);  // calculate switching function for molecule pair i and j
+        n += f_ij*phi_i[2]*phi_j[2];  // coordination number of molecule i
   
-          double dfdix = 0;
-          for (unsigned int ix=0; ix<3; ix++){
-            dfdix = -df_ij*dist[ix]/modij*phi_i[2]*phi_j[2];
-            df[i][ix] += dfdix + f_ij*dphi_i[ix]*phi_j[2];  // derivative of switching function with respect to x_i
-      	    df[j][ix] += -dfdix + f_ij*phi_i[2]*dphi_j[ix];  // derivative of switching function with respect to x_j 
-          }
+        double dfdix = 0;
+        for (unsigned int ix=0; ix<3; ix++){
+          dfdix = -df_ij*dist[ix]/modij*phi_i[2]*phi_j[2];
+          df[i][ix] += dfdix + f_ij*dphi_i[ix]*phi_j[2];  // derivative of switching function with respect to x_i
+          df[j][ix] += -dfdix + f_ij*phi_i[2]*dphi_j[ix];  // derivative of switching function with respect to x_j 
         }
       }
-
-      rhofunction(n);
-      drho[i] = drho_i;
-
-      // calculate the derivative
-      for (unsigned int ix=0; ix<3; ix++){
-        deriv[i][ix] += df[i][ix];  // derivative of switching function with respect to x_i
-        //deriv[j][ix] += df[j][ix];  // derivative of switching function with respect to x_j 
-      }
-
-      // sum the total CV
-      cv_val += rho_i;
-
     }
+
+    rhofunction(n);
+    drho[i] = drho_i;
+
+    // calculate the derivative
+    for (unsigned int ix=0; ix<3; ix++){
+      deriv[i][ix] += df[i][ix];  // derivative of switching function with respect to x_i
+      //deriv[j][ix] += df[j][ix];  // derivative of switching function with respect to x_j 
+    }
+
+    // sum the total CV
+    cv_val += rho_i;
+
   }
  
   comm.Sum(deriv);
   comm.Sum(cv_val);
-  comm.Sum(virial);
+  //comm.Sum(virial);
 
   for(unsigned i=0;i<nmol;i++) {
     setAtomsDerivatives(i,deriv[i]);

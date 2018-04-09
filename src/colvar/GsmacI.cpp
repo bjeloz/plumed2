@@ -270,8 +270,8 @@ void GsmacI::calculate()
   if(GsmacIlist.step==0) GsmacI_newlist(center1,GsmacIlist); // CHECK IF NEIGHBOR LIST HAVE TO BE CONSTRUCTED
   GsmacIlist.step=1; GsmacI_checklist(center1,GsmacIlist);   // CALL NEIGHBOR LIST IN CASE
   
-  unsigned int stride=comm.Get_size();  // SET THE PARALLELIZATION VARIABLES for the for loops
-  unsigned int rank=comm.Get_rank();
+  unsigned int stride;  // SET THE PARALLELIZATION VARIABLES for the for loops
+  unsigned int rank;
   
   stride=comm.Get_size();
   rank=comm.Get_rank();
