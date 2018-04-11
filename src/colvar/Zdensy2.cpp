@@ -67,8 +67,8 @@ namespace PLMD{
       void rhofunction(double);  // switching function f_ij
 
       vector<double> list;  // inded list of all molecules in defined layer interval
-      unsigned int ll;  // length of list
-      void layerindices();  // index list of all molecules positioned within the defined layer interval
+      unsigned int ll;      // length of list
+      void layerindices(vector<Vector>&);  // index list of all molecules positioned within the defined layer interval
 
       unsigned int stride;
       unsigned int rank;
@@ -190,7 +190,6 @@ void Zdensy2::ffunction(double r_ij) {
 }
 
 
-
 void Zdensy2::rhofunction(double n_i) {
   // switching function to determine the local density of molecule i
 
@@ -212,8 +211,10 @@ void Zdensy2::rhofunction(double n_i) {
 }
 
 
-void Zdensy2::layerindices() {
+void Zdensy2::layerindices(vector<Vector> &pos) {
 
+  vector<Vector> ** pospointer;  // declare pointer for matix pos
+  pospointer = &pos;  // assign address of pos to pospointer
   unsigned int k = 0;
 
   //unsigned int stride;
@@ -232,11 +233,13 @@ void Zdensy2::layerindices() {
 
     if ( (lbound_c < pos_i[2]) && (pos_i[2] < ubound_c) ) { 
       list[k] = i;
-      //for (unsigned int i=0; ix<3; i++) {
-      //  pos_;
-      //}
+
+      for (unsigned int ix=0; i<nmol; i++) {
+        **pospointer[k][ix] = pos_i[ix];
+      }
 
       k++;
+
     }
   }
 
@@ -268,12 +271,13 @@ void Zdensy2::calculate()
     }
   }
 
-  layerindices();  // construct list of molecules iniside the defined interval
+  vector<Vector> pos(nmol)
+  layerindices(pos);  // construct list of molecules iniside the defined interval
 
-  for (unsigned int i=0; i<ll; i++) {
-    cout << "list[i]: " << list[i] << "\n";
-  }
-  cout << "--> ll: " << ll << "\n";
+  //for (unsigned int i=0; i<ll; i++) {
+  //  cout << "list[i]: " << list[i] << "\n";
+  //}
+  //cout << "--> ll: " << ll << "\n";
 
   vector<int> drho(ll);  // DERIVATIVES, vector of customized Plumed vectors
   vector<Vector> df(ll);
@@ -287,8 +291,8 @@ void Zdensy2::calculate()
   rank=comm.Get_rank();
 
   for (unsigned int i=rank; i<ll; i+=stride) {  // SUM OVER MOLECULES
- 
-    kernel(pos_i[2]);  // calculate value of kernel function kval and its derivative dkval
+  
+    kernel(pos[i]);  // calculate value of kernel function kval and its derivative dkval
     phi_i = kval;
     dphi_i = dkval;
 
@@ -299,13 +303,13 @@ void Zdensy2::calculate()
   
     Vector dist; // 3D vector
   
-    for(unsigned int j=0; j < nmol; ++j) {                   // SUM OVER NEIGHBORS
+    for(unsigned int j=0; j<ll; ++j) {                   // SUM OVER NEIGHBORS
 
       Vector pos_j = getPosition(j);
 
       if ( (j != i) && (lbound_c < pos_j[2]) && (pos_j[2] < ubound_c) ) {
         double modij;
-        dist=pbcDistance(pos_i,pos_j);    // DISTANCE BETWEEN THEM
+        dist=pbcDistance(pos[i],pos[j]);    // DISTANCE BETWEEN THEM
         modij=dist.modulo();  // scalar length of the distance vector
 
         kernel(pos_j[2]);  // calculate value of kernel function kval and its derivative dkval
