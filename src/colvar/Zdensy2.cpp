@@ -69,21 +69,22 @@ namespace PLMD{
       vector<double> list;  // inded list of all molecules in defined layer interval
       unsigned int ll;      // length of list
       void layerindices(vector<Vector>&);  // index list of all molecules positioned within the defined layer interval
+      vector<Vector> pos;
 
       unsigned int stride;
       unsigned int rank;
 
       ofstream fdbg;   // definition of object needed for debugging
       ofstream rdbg;
-      
+
       Zdensy2(const ActionOptions&);              //    CONSTRUCTOR
       ~Zdensy2();                                 //    DESTRUCTOR
       // active methods:
       static void registerKeywords( Keywords& keys );  // KEYWORDS
       virtual void calculate();                        // CALCULATE CV 
-      
+
     };
-    
+
     PLUMED_REGISTER_ACTION(Zdensy2,"ZDENSY2")
     
     void Zdensy2::registerKeywords( Keywords& keys ){
@@ -213,8 +214,8 @@ void Zdensy2::rhofunction(double n_i) {
 
 void Zdensy2::layerindices(vector<Vector> &pos) {
 
-  vector<Vector> ** pospointer;  // declare pointer for matix pos
-  pospointer = &pos;  // assign address of pos to pospointer
+  //vector<Vector> * pospointer;  // declare pointer for matix pos
+  //pospointer = pos;  // assign address of pos to pospointer
   unsigned int k = 0;
 
   //unsigned int stride;
@@ -229,25 +230,38 @@ void Zdensy2::layerindices(vector<Vector> &pos) {
 
     pos_i = getPosition(i);
 
-    //cout << "pos_i[0]: " << pos_i[0] << ", pos_i[1]: " << pos_i[1] << ", pos_i[2]: " << pos_i[2] << "\n";
+    // cout << "pos_i[0]: " << pos_i[0] << ", pos_i[1]: " << pos_i[1] << ", pos_i[2]: " << pos_i[2] << "\n";
 
-    if ( (lbound_c < pos_i[2]) && (pos_i[2] < ubound_c) ) { 
+    if ( (lbound_c < pos_i[2]) && (pos_i[2] < ubound_c) ) {
       list[k] = i;
 
-      for (unsigned int ix=0; i<nmol; i++) {
-        **pospointer[k][ix] = pos_i[ix];
+      for (unsigned int ix=0; ix<3; ix++) {
+        pos[i][ix] = pos_i[ix];
+
+        // cout << "pos[k][ix]: " << pos[k][ix] << "  ";
+        // cout << "pos_i[ix]: " << pos_i[ix] << "  ";
+
       }
+      //cout << "\n";
 
       k++;
 
     }
   }
 
+  //// check:
+  for (unsigned int i=0; i<nmol; i++) {
+    for (unsigned int ix=0; ix<3; ix++) {
+      cout << "pos[i][ix] = " << pos[i][ix] << ", ";
+    }
+    cout << "\n";
+  }
+
   ll = k;  // length of neighbour list
 
 }
 
-    
+
 void Zdensy2::calculate()
 {
 
@@ -260,7 +274,7 @@ void Zdensy2::calculate()
 
   double cv_val;   // CV
   cv_val=0;
-  
+ 
   Tensor virial;   // VIRIAL
   virial.zero();   // no virial contribution
   vector<Vector> deriv(getNumberOfAtoms());  // DERIVATIVES, vector of customized Plumed vectors
@@ -271,7 +285,7 @@ void Zdensy2::calculate()
     }
   }
 
-  vector<Vector> pos(nmol)
+  vector<Vector> pos(nmol);
   layerindices(pos);  // construct list of molecules iniside the defined interval
 
   //for (unsigned int i=0; i<ll; i++) {
@@ -292,7 +306,7 @@ void Zdensy2::calculate()
 
   for (unsigned int i=rank; i<ll; i+=stride) {  // SUM OVER MOLECULES
   
-    kernel(pos[i]);  // calculate value of kernel function kval and its derivative dkval
+    kernel(pos[i][2]);  // calculate value of kernel function kval and its derivative dkval
     phi_i = kval;
     dphi_i = dkval;
 
