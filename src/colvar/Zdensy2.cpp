@@ -200,14 +200,16 @@ void Zdensy2::rhofunction(double n_i) {
   // get value of switching function in dependence of n_i
   rho_i = 1/(1 + exp(-sigmaf*(n_i - n_0)));
 
-  drho_i = sigmaf*f_ij*(1-f_ij);
+  drho_i = sigmaf*rho_i*(1-rho_i);
   if ( rho_i < 0.000001 ) {
     drho_i = 0.0;
     rho_i = 0.0;
-  } else if ( f_ij > 0.999999 ) {
+  } else if ( rho_i > 0.999999 ) {
     drho_i = 0.0;
     rho_i = 1.0;
   }
+
+  //cout << "n_i: " << n_i << ", rho_i: " << rho_i << ", drho_i: " << drho_i << endl;
 
 }
 
@@ -233,16 +235,16 @@ void Zdensy2::layerindices(vector<Vector> &pos) {
     // cout << "pos_i[0]: " << pos_i[0] << ", pos_i[1]: " << pos_i[1] << ", pos_i[2]: " << pos_i[2] << "\n";
 
     if ( (lbound_c < pos_i[2]) && (pos_i[2] < ubound_c) ) {
-      list[k] = i;
+      //list[k] = i;  // list is the carrier of the true index for the molecule
 
       for (unsigned int ix=0; ix<3; ix++) {
-        pos[i][ix] = pos_i[ix];
+        pos[k][ix] = pos_i[ix];
 
-        // cout << "pos[k][ix]: " << pos[k][ix] << "  ";
-        // cout << "pos_i[ix]: " << pos_i[ix] << "  ";
+        //cout << "pos[k][ix]: " << pos[k][ix] << ", ";
+        //cout << "pos_i[ix]: " << pos_i[ix] << ", ";
 
       }
-      //cout << "\n";
+      //cout << "k: " << k << "\n";
 
       k++;
 
@@ -250,12 +252,12 @@ void Zdensy2::layerindices(vector<Vector> &pos) {
   }
 
   //// check:
-  for (unsigned int i=0; i<nmol; i++) {
-    for (unsigned int ix=0; ix<3; ix++) {
-      cout << "pos[i][ix] = " << pos[i][ix] << ", ";
-    }
-    cout << "\n";
-  }
+  //for (unsigned int i=0; i<nmol; i++) {
+  //  for (unsigned int ix=0; ix<3; ix++) {
+  //    cout << "pos[i][ix] = " << pos[i][ix] << ", ";
+  //  }
+  //  cout << "\n";
+  //}
 
   ll = k;  // length of neighbour list
 
@@ -288,6 +290,15 @@ void Zdensy2::calculate()
   vector<Vector> pos(nmol);
   layerindices(pos);  // construct list of molecules iniside the defined interval
 
+
+  //for (unsigned int i=0; i<nmol; i++) {
+  //  for (unsigned int ix=0; ix<3; ix++) {
+  //    cout << "pos[i][ix]: " << pos[i][ix] << ", ";
+  //  }
+  //  cout << "i: " << i << "\n";
+  //}
+
+
   //for (unsigned int i=0; i<ll; i++) {
   //  cout << "list[i]: " << list[i] << "\n";
   //}
@@ -306,7 +317,7 @@ void Zdensy2::calculate()
 
   for (unsigned int i=rank; i<ll; i+=stride) {  // SUM OVER MOLECULES
   
-    kernel(pos[i][2]);  // calculate value of kernel function kval and its derivative dkval
+    kernel(pos[list[i]][2]);  // calculate value of kernel function kval and its derivative dkval
     phi_i = kval;
     dphi_i = dkval;
 
@@ -336,6 +347,8 @@ void Zdensy2::calculate()
         ffunction(modij);  // calculate switching function for molecule pair i and j
         n += f_ij*phi_i[2]*phi_j[2];  // coordination number of molecule i
   
+	cout << "n: " << n << ", f_ij: " << f_ij << endl;
+
         double dfdix = 0;
         for (unsigned int ix=0; ix<3; ix++){
           dfdix = -df_ij*dist[ix]/modij*phi_i[2]*phi_j[2];
@@ -347,6 +360,8 @@ void Zdensy2::calculate()
 
     rhofunction(n);
     drho[i] = drho_i;
+
+    //cout << "rho_i: " << rho_i << ", drho_i: " << drho_i << endl;
 
     // calculate the derivative
     for (unsigned int ix=0; ix<3; ix++){
