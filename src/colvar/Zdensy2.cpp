@@ -68,7 +68,7 @@ namespace PLMD{
 
       vector<double> list;  // inded list of all molecules in defined layer interval
       unsigned int ll;      // length of list
-      void layerindices(vector<Vector>&);  // index list of all molecules positioned within the defined layer interval
+      void layerindices(vector<Vector>&, vector<int>&);  // index list of all molecules positioned within the defined layer interval
       vector<Vector> pos;
 
       unsigned int stride;
@@ -164,13 +164,11 @@ void Zdensy2::kernel(double z) {
   }
   kval[1] = kval[2];
   kval[0] = kval[2];
-
 }
 
 
 void Zdensy2::ffunction(double r_ij) {
   // switching function to determine the cutoff range of neighbours
-
   double f_f;
   f_ij = 0;
   df_ij = 0;
@@ -187,13 +185,11 @@ void Zdensy2::ffunction(double r_ij) {
     df_ij = 0.0;
     f_ij = 1.0;
   }
-
 }
 
 
 void Zdensy2::rhofunction(double n_i) {
   // switching function to determine the local density of molecule i
-
   rho_i = 0;
   drho_i = 0;
 
@@ -208,34 +204,31 @@ void Zdensy2::rhofunction(double n_i) {
     drho_i = 0.0;
     rho_i = 1.0;
   }
-
   //cout << "n_i: " << n_i << ", rho_i: " << rho_i << ", drho_i: " << drho_i << endl;
-
 }
 
 
-void Zdensy2::layerindices(vector<Vector> &pos) {
+void Zdensy2::layerindices(vector<Vector> &pos, vector<int> &list) {
 
-  //vector<Vector> * pospointer;  // declare pointer for matix pos
-  //pospointer = pos;  // assign address of pos to pospointer
   unsigned int k = 0;
 
-  //unsigned int stride;
-  //unsigned int rank;
+  unsigned int stride;
+  unsigned int rank;
 
-  //stride = comm.Get_size();
-  //rank = comm.Get_rank();
+  stride = comm.Get_size();
+  rank = comm.Get_rank();
 
   Vector pos_i;
   //for (unsigned int i=rank; i<nmol; i+=stride) {
-  for (unsigned int i=0; i<nmol; i++) {
+  for (unsigned int i=rank; i<nmol; i+=stride) {
 
     pos_i = getPosition(i);
 
-    // cout << "pos_i[0]: " << pos_i[0] << ", pos_i[1]: " << pos_i[1] << ", pos_i[2]: " << pos_i[2] << "\n";
+    //cout << "pos_i[0]: " << pos_i[0] << ", pos_i[1]: " << pos_i[1] << ", pos_i[2]: " << pos_i[2] << "\n";
+    //cout << "lbound_c: " << lbound_c << ", ubound_c: " << ubound_c << ", pos_i[2]: " << pos_i[2] << endl;
 
     if ( (lbound_c < pos_i[2]) && (pos_i[2] < ubound_c) ) {
-      //list[k] = i;  // list is the carrier of the true index for the molecule
+      list[k] = i;  // list is the carrier of the true index i for the molecule. k is the index of the molecules in the bias region.
 
       for (unsigned int ix=0; ix<3; ix++) {
         pos[k][ix] = pos_i[ix];
@@ -275,11 +268,15 @@ void Zdensy2::calculate()
   ubound_c = ubound*zbox;
 
   double cv_val;   // CV
-  cv_val=0;
+  cv_val = 0;
  
   Tensor virial;   // VIRIAL
   virial.zero();   // no virial contribution
   vector<Vector> deriv(getNumberOfAtoms());  // DERIVATIVES, vector of customized Plumed vectors
+
+  vector<double> drho(nmol);  // Derivative of rho with respect to n
+  vector<Vector> df(nmol); // DERIVATIVES of switching function, vector of customized Plumed vectors
+
 
   for (unsigned int i=0; i<nmol; i++) {
     for (unsigned int ix=0; ix<3; ix++) {
@@ -288,26 +285,8 @@ void Zdensy2::calculate()
   }
 
   vector<Vector> pos(nmol);
-  layerindices(pos);  // construct list of molecules iniside the defined interval
-
-
-  //for (unsigned int i=0; i<nmol; i++) {
-  //  for (unsigned int ix=0; ix<3; ix++) {
-  //    cout << "pos[i][ix]: " << pos[i][ix] << ", ";
-  //  }
-  //  cout << "i: " << i << "\n";
-  //}
-
-
-  //for (unsigned int i=0; i<ll; i++) {
-  //  cout << "list[i]: " << list[i] << "\n";
-  //}
-  //cout << "--> ll: " << ll << "\n";
-
-  vector<int> drho(ll);  // DERIVATIVES, vector of customized Plumed vectors
-  vector<Vector> df(ll);
-  //vector<int> drho(nmol);  // DERIVATIVES, vector of customized Plumed vectors
-  //vector<Vector> df(nmol);
+  vector<int> list(nmol);
+  layerindices(pos, list);  // construct list of molecules iniside the defined interval, pos, together with the list, list, which carries the true index of the molecule.
 
   unsigned int stride;  // SET THE PARALLELIZATION VARIABLES for the for loops
   unsigned int rank;
@@ -316,64 +295,63 @@ void Zdensy2::calculate()
   rank=comm.Get_rank();
 
   for (unsigned int i=rank; i<ll; i+=stride) {  // SUM OVER MOLECULES
-  
-    kernel(pos[list[i]][2]);  // calculate value of kernel function kval and its derivative dkval
+
+    // clean df from previous run, check if there is a faster way
+    for (unsigned int ii=0; ii<nmol; ii++) {
+      for (unsigned int ix=0; ix<3; ix++) {
+        df[ii][ix] = 0;
+      }
+    }
+
+    kernel(pos[i][2]);  // calculate value of kernel function kval and its derivative dkval
     phi_i = kval;
     dphi_i = dkval;
 
-    double n;
-    n=0.;
+    double n_i;
+    n_i=0.;
   
-    //vector<double> f;       // SWITCHING FUNCTION
   
-    Vector dist; // 3D vector
+    Vector dist;  // 3D vector
   
-    for(unsigned int j=0; j<ll; ++j) {                   // SUM OVER NEIGHBORS
+    for(unsigned int j=0; j<ll; ++j) {  // SUM OVER NEIGHBORS
 
-      Vector pos_j = getPosition(j);
-
-      if ( (j != i) && (lbound_c < pos_j[2]) && (pos_j[2] < ubound_c) ) {
+      if ( j != i ) {
         double modij;
         dist=pbcDistance(pos[i],pos[j]);    // DISTANCE BETWEEN THEM
         modij=dist.modulo();  // scalar length of the distance vector
 
-        kernel(pos_j[2]);  // calculate value of kernel function kval and its derivative dkval
+        kernel(pos[j][2]);  // calculate value of kernel function kval and its derivative dkval
         phi_j = kval;
         dphi_j = dkval;
-
-        //log << "j: " << j << ", zpos: " << zpos << ", kval[2]: " << kval[2] << "\n";
     
         // calculate
         ffunction(modij);  // calculate switching function for molecule pair i and j
-        n += f_ij*phi_i[2]*phi_j[2];  // coordination number of molecule i
+        n_i += f_ij*phi_i[2]*phi_j[2];  // coordination number of molecule i
   
-	cout << "n: " << n << ", f_ij: " << f_ij << endl;
-
         double dfdix = 0;
-        for (unsigned int ix=0; ix<3; ix++){
+        for (unsigned int ix=0; ix<3; ix++) {
           dfdix = -df_ij*dist[ix]/modij*phi_i[2]*phi_j[2];
-          df[i][ix] += dfdix + f_ij*dphi_i[ix]*phi_j[2];  // derivative of switching function with respect to x_i
-          df[j][ix] += -dfdix + f_ij*phi_i[2]*dphi_j[ix];  // derivative of switching function with respect to x_j 
+          df[list[i]][ix] += dfdix + f_ij*dphi_i[ix]*phi_j[2]; // derivative of switching function with respect to x_j
+          df[list[j]][ix] += -dfdix + f_ij*phi_i[2]*dphi_j[ix]; // derivative of switching function with respect to x_j
         }
       }
     }
 
-    rhofunction(n);
-    drho[i] = drho_i;
+    rhofunction(n_i);
+    drho[list[i]] = drho_i;
 
-    //cout << "rho_i: " << rho_i << ", drho_i: " << drho_i << endl;
-
-    // calculate the derivative
-    for (unsigned int ix=0; ix<3; ix++){
-      deriv[i][ix] += df[i][ix];  // derivative of switching function with respect to x_i
-      //deriv[j][ix] += df[j][ix];  // derivative of switching function with respect to x_j 
+    // calculate the derivative of CV with respect to position of molecule i
+    for (unsigned int j=0; j<ll; j++) {
+      for (unsigned int ix=0; ix<3; ix++) {
+        deriv[list[j]][ix] += drho_i*df[list[j]][ix];
+      }
     }
 
     // sum the total CV
     cv_val += rho_i;
-
+    //cv_val += n_i;
   }
- 
+
   comm.Sum(deriv);
   comm.Sum(cv_val);
   //comm.Sum(virial);
@@ -381,14 +359,12 @@ void Zdensy2::calculate()
   for(unsigned i=0;i<nmol;i++) {
     setAtomsDerivatives(i,deriv[i]);
   }
-  
+
   setBoxDerivatives(virial);
   setValue(cv_val);
 
 }
-  
-  
-    
+
     Zdensy2::~Zdensy2(){
     }
 
