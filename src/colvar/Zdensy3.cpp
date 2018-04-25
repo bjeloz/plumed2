@@ -42,7 +42,7 @@ namespace PLMD{
 */
 //+ENDPLUMEDOC
    
-    class Zdensy2 : public Colvar{
+    class Zdensy3 : public Colvar{
 
     public:
 
@@ -77,17 +77,17 @@ namespace PLMD{
       ofstream fdbg;   // definition of object needed for debugging
       ofstream rdbg;
 
-      Zdensy2(const ActionOptions&);              //    CONSTRUCTOR
-      ~Zdensy2();                                 //    DESTRUCTOR
+      Zdensy3(const ActionOptions&);              //    CONSTRUCTOR
+      ~Zdensy3();                                 //    DESTRUCTOR
       // active methods:
       static void registerKeywords( Keywords& keys );  // KEYWORDS
       virtual void calculate();                        // CALCULATE CV 
 
     };
 
-    PLUMED_REGISTER_ACTION(Zdensy2,"ZDENSY2")
+    PLUMED_REGISTER_ACTION(Zdensy3,"ZDENSY3")
     
-    void Zdensy2::registerKeywords( Keywords& keys ){
+    void Zdensy3::registerKeywords( Keywords& keys ){
 
       Colvar::registerKeywords(keys);
       keys.add("atoms","CENTER","the labels of the atoms acting as center of the molecules");
@@ -106,7 +106,7 @@ namespace PLMD{
 
     }
     
-    Zdensy2::Zdensy2(const ActionOptions&ao):
+    Zdensy3::Zdensy3(const ActionOptions&ao):
       PLUMED_COLVAR_INIT(ao)
     {
 
@@ -138,7 +138,7 @@ namespace PLMD{
 
     }
     
-void Zdensy2::kernel(double z) {
+void Zdensy3::kernel(double z) {
   // switching function to limit action of Gsmac CV
   double f_lc = 0;
   double f_ll = 0;
@@ -167,7 +167,7 @@ void Zdensy2::kernel(double z) {
 }
 
 
-void Zdensy2::ffunction(double r_ij) {
+void Zdensy3::ffunction(double r_ij) {
   // switching function to determine the cutoff range of neighbours
   double f_f;
   f_ij = 0;
@@ -188,7 +188,7 @@ void Zdensy2::ffunction(double r_ij) {
 }
 
 
-void Zdensy2::rhofunction(double n_i) {
+void Zdensy3::rhofunction(double n_i) {
   // switching function to determine the local density of molecule i
   rho_i = 0;
   drho_i = 0;
@@ -208,7 +208,7 @@ void Zdensy2::rhofunction(double n_i) {
 }
 
 
-void Zdensy2::layerindices(vector<Vector> &pos, vector<int> &list) {
+void Zdensy3::layerindices(vector<Vector> &pos, vector<int> &list) {
 
   unsigned int k = 0;
 
@@ -250,7 +250,7 @@ void Zdensy2::layerindices(vector<Vector> &pos, vector<int> &list) {
 }
 
 
-void Zdensy2::calculate()
+void Zdensy3::calculate()
 {
 
   zbox = getBox()[2][2];
@@ -357,7 +357,7 @@ void Zdensy2::calculate()
 
 }
 
-    Zdensy2::~Zdensy2(){
+    Zdensy3::~Zdensy3(){
     }
 
   }

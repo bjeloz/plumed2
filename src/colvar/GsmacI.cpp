@@ -286,7 +286,7 @@ void GsmacI::calculate()
   
   comm.Sum(v);  // MERGING UP
 
-  for(unsigned int i=rank;i<mols;i+=stride) {                   // SUM OVER MOLECULES
+  for(unsigned int i=rank;i<mols;i+=stride) {     // SUM OVER MOLECULES
     double n,angtot;
     int start_i,end_i;
     double S1,S2,S3;
@@ -294,23 +294,21 @@ void GsmacI::calculate()
     end_i=end[i].serial();
 
     
-    vector<double> f(GsmacIlist.nn[i]);                            // SWITCHING FUNCTION
-    vector<double> omega(GsmacIlist.nn[i]);                            // SWITCHING FUNCTION
-    vector<Vector> domega1(GsmacIlist.nn[i]);                      // ANGULAR PART1
-    vector<Vector> domega2(GsmacIlist.nn[i]);                      // ANGULAR PART2
-    vector<Vector> df_a(GsmacIlist.nn[i]);                      // ANGULAR PART2
-    vector<Vector> df_b(GsmacIlist.nn[i]);                      // ANGULAR PART2
+    vector<double> f(GsmacIlist.nn[i]);           // SWITCHING FUNCTION
+    vector<double> omega(GsmacIlist.nn[i]);       // SWITCHING FUNCTION
+    vector<Vector> domega1(GsmacIlist.nn[i]);     // ANGULAR PART1
+    vector<Vector> domega2(GsmacIlist.nn[i]);     // ANGULAR PART2
+    vector<Vector> df_a(GsmacIlist.nn[i]);        // ANGULAR PART2
+    vector<Vector> df_b(GsmacIlist.nn[i]);        // ANGULAR PART2
     
     n=0.;
     angtot=0.;
     
     Vector dist;
 
-    for( int j=0; j < GsmacIlist.nn[i]; ++j) {                   // SUM OVER NEIGHBORS
+    for( int j=0; j < GsmacIlist.nn[i]; ++j) {    // SUM OVER NEIGHBORS
       int index_j;
-      index_j=GsmacIlist.ni[i][j]-mols;                                      // TRUE INDEX OF THE J NEIGHBOR
-      //      if(i==index_j){continue;}
-      Vector comp;
+      index_j=GsmacIlist.ni[i][j]-mols;           // TRUE INDEX OF THE J NEIGHBOR
       double modij;
       dist=pbcDistance(getPosition(i),getPosition(index_j+mols));    // DISTANCE BETWEEN THEM
       modij=dist.modulo();                                              //
