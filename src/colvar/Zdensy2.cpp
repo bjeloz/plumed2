@@ -233,11 +233,7 @@ void Zdensy2::layerindices(vector<Vector> &pos, vector<int> &list) {
       for (unsigned int ix=0; ix<3; ix++) {
         pos[k][ix] = pos_i[ix];
 
-        //cout << "pos[k][ix]: " << pos[k][ix] << ", ";
-        //cout << "pos_i[ix]: " << pos_i[ix] << ", ";
-
       }
-      //cout << "k: " << k << "\n";
 
       k++;
 
@@ -267,15 +263,9 @@ void Zdensy2::calculate()
   virial.zero();   // no virial contribution
   vector<Vector> deriv(getNumberOfAtoms());  // DERIVATIVES, vector of customized Plumed vectors
 
-  vector<double> drho(nmol);  // Derivative of rho with respect to n
-  vector<Vector> df(nmol); // DERIVATIVES of switching function, vector of customized Plumed vectors
-
-
-  for (unsigned int i=0; i<nmol; i++) {
-    for (unsigned int ix=0; ix<3; ix++) {
-      deriv[i][ix] = 0;
-    }
-  }
+  //vector<double> drho(nmol);  // Derivative of rho with respect to n
+  vector<Vector> df_a(nmol); // DERIVATIVES of switching function, vector of customized Plumed vectors
+  vector<Vector> df_b(nmol); // DERIVATIVES of switching function, vector of customized Plumed vectors
 
   vector<Vector> pos(nmol);
   vector<int> list(nmol);
@@ -290,11 +280,11 @@ void Zdensy2::calculate()
   for (unsigned int i=rank; i<ll; i+=stride) {  // SUM OVER MOLECULES
 
     // clean df from previous run, check if there is a faster way
-    for (unsigned int ii=0; ii<nmol; ii++) {
-      for (unsigned int ix=0; ix<3; ix++) {
-        df[ii][ix] = 0;
-      }
-    }
+    //for (unsigned int ii=0; ii<nmol; ii++) {
+    //  for (unsigned int ix=0; ix<3; ix++) {
+    //    df[ii][ix] = 0;
+    //  }
+    //}
 
     kernel(pos[i][2]);  // calculate value of kernel function kval and its derivative dkval
     phi_i = kval;
@@ -323,19 +313,23 @@ void Zdensy2::calculate()
         double dfdix = 0;
         for (unsigned int ix=0; ix<3; ix++) {
           dfdix = -df_ij*dist[ix]/modij*phi_i[2]*phi_j[2];
-          df[list[i]][ix] += dfdix + f_ij*dphi_i[ix]*phi_j[2]; // derivative of switching function with respect to x_j
-          df[list[j]][ix] += -dfdix + f_ij*phi_i[2]*dphi_j[ix]; // derivative of switching function with respect to x_j
+          df_a[j][ix] = dfdix + f_ij*dphi_i[ix]*phi_j[2];  // derivative of switching function with respect to x_j
+          df_b[j][ix] = -dfdix + f_ij*phi_i[2]*dphi_j[ix]; // derivative of switching function with respect to x_j
         }
       }
     }
 
     rhofunction(n_i);
-    drho[list[i]] = drho_i;
+    //drho[list[i]] = drho_i;
 
+    unsigned int index_i = list[i];  // true index of molecule i
     // calculate the derivative of CV with respect to position of molecule i
     for (unsigned int j=0; j<ll; j++) {
-      for (unsigned int ix=0; ix<3; ix++) {
-        deriv[list[j]][ix] += drho_i*df[list[j]][ix];
+      if ( j != i ) {
+        for (unsigned int ix=0; ix<3; ix++) {
+          deriv[index_i][ix] += drho_i*df_a[j][ix];  // add derivative terms with respect to atom i
+          deriv[list[j]][ix] += drho_i*df_b[j][ix];  // add derivative terms with respect to atom j
+        }
       }
     }
 
@@ -346,7 +340,7 @@ void Zdensy2::calculate()
 
   comm.Sum(deriv);
   comm.Sum(cv_val);
-  comm.Sum(virial);
+  //comm.Sum(virial);
 
   for(unsigned i=0;i<nmol;i++) {
     setAtomsDerivatives(i,deriv[i]);
