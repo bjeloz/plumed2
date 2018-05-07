@@ -43,7 +43,7 @@ namespace PLMD{
 */
 //+ENDPLUMEDOC
    
-    class GsmacI : public Colvar{
+    class GsmacIL : public Colvar{
       SwitchingFunction distanceswitch;  // definition of switching function for f_ij
       SwitchingFunction coordswitch;     // definition of switching function for rho_i
 
@@ -69,7 +69,7 @@ namespace PLMD{
       ofstream rdbg;
       
       
-      struct GsmacIlist_s {   // STRUCTURE NEEDED TO CONSTRUCT THE VERLET LIST
+      struct GsmacILlist_s {   // STRUCTURE NEEDED TO CONSTRUCT THE VERLET LIST
 	double rcut;      // CUT OFF OF THE LIST
 	double rskin;     // SKIN TO CHECK IF THE LIST HAS TO BE RECALCULATED
 	double rskin2;    // SKIN SQUARED
@@ -78,25 +78,25 @@ namespace PLMD{
 	vector<vector<int> > ni; // List, it's a vector of vectors, for each molecule one vector
 	vector<Vector> pos1;  // POSITIONS CENTER MOLECULE
 	vector<Vector> pos2;  // POSITIONS NEIGHBORING MOLECULES
-      } GsmacIlist;  // object of type GsmacIlist_s defined
+      } GsmacILlist;  // object of type GsmacILlist_s defined
       
       
-      GsmacI(const ActionOptions&);              //    CONSTRUCTOR
-      ~GsmacI();                                 //    DESTRUCTOR
+      GsmacIL(const ActionOptions&);              //    CONSTRUCTOR
+      ~GsmacIL();                                 //    DESTRUCTOR
       // active methods:
       static void registerKeywords( Keywords& keys );  // KEYWORDS
       virtual void calculate();                        // CALCULATE CV 
 
-      void GsmacI_newlist(vector<AtomNumber>&, GsmacIlist_s &GsmacIlist);   // NEW VERLIST
-      void GsmacI_checklist(vector<AtomNumber>&, GsmacIlist_s &GsmacIlist); // CHECK THE VERLET LIST
+      void GsmacIL_newlist(vector<AtomNumber>&, GsmacILlist_s &GsmacILlist);   // NEW VERLIST
+      void GsmacIL_checklist(vector<AtomNumber>&, GsmacILlist_s &GsmacILlist); // CHECK THE VERLET LIST
       double dotprod(Vector,Vector);
       double norm2(Vector);
       
     };
     
-    PLUMED_REGISTER_ACTION(GsmacI,"GSMACI")
+    PLUMED_REGISTER_ACTION(GsmacIL,"GSMACIL")
     
-    void GsmacI::registerKeywords( Keywords& keys ){
+    void GsmacIL::registerKeywords( Keywords& keys ){
 
       Colvar::registerKeywords(keys);
       keys.add("atoms","CENTER1","the labels of the atoms acting as center of the molecules");
@@ -120,7 +120,7 @@ namespace PLMD{
 
     }
     
-    GsmacI::GsmacI(const ActionOptions&ao):
+    GsmacIL::GsmacIL(const ActionOptions&ao):
       PLUMED_COLVAR_INIT(ao)
     {
       
@@ -179,12 +179,12 @@ namespace PLMD{
       parse("SIGMAL",sigmal);
 
       mols=center1.size();
-      GsmacIlist.pos1.resize(mols);
-      GsmacIlist.pos2.resize(mols);
-      GsmacIlist.nn.resize(mols);
-      GsmacIlist.ni.resize(mols);
+      GsmacILlist.pos1.resize(mols);
+      GsmacILlist.pos2.resize(mols);
+      GsmacILlist.nn.resize(mols);
+      GsmacILlist.ni.resize(mols);
       for(unsigned int i=0; i < mols ; i++){
-	GsmacIlist.ni[i].resize(mols);
+	GsmacILlist.ni[i].resize(mols);
       }
       
       
@@ -213,10 +213,10 @@ namespace PLMD{
       parse("R_CUT",r_cut);
       parse("R_SKIN",r_skin);
 
-      GsmacIlist.rcut=r_cut;
-      GsmacIlist.rskin=r_skin;
-      GsmacIlist.rskin2=r_skin*r_skin;
-      GsmacIlist.step=0;
+      GsmacILlist.rcut=r_cut;
+      GsmacILlist.rskin=r_skin;
+      GsmacILlist.rskin2=r_skin*r_skin;
+      GsmacILlist.step=0;
      
       checkRead();  // check that everything on the input line has been read properly,
                     // all parse command should follow before checkRead()
@@ -226,7 +226,7 @@ namespace PLMD{
 
     }
     
-void GsmacI::kernel(double z) {
+void GsmacIL::kernel(double z) {
   // switching function to limit action of Gsmac CV
 
   // transform input values into cartesian coordinates
@@ -257,7 +257,7 @@ void GsmacI::kernel(double z) {
 
 
     
-void GsmacI::calculate()
+void GsmacIL::calculate()
 {
   
   double cv_val;   // CV
@@ -267,8 +267,8 @@ void GsmacI::calculate()
   virial.zero();   // no virial contribution
   vector<Vector> deriv(getNumberOfAtoms());  // DERIVATIVES, vector of customized Plumed vectors
   
-  if(GsmacIlist.step==0) GsmacI_newlist(center1,GsmacIlist); // CHECK IF NEIGHBOR LIST HAVE TO BE CONSTRUCTED
-  GsmacIlist.step=1; GsmacI_checklist(center1,GsmacIlist);   // CALL NEIGHBOR LIST IN CASE
+  if(GsmacILlist.step==0) GsmacIL_newlist(center1,GsmacILlist); // CHECK IF NEIGHBOR LIST HAVE TO BE CONSTRUCTED
+  GsmacILlist.step=1; GsmacIL_checklist(center1,GsmacILlist);   // CALL NEIGHBOR LIST IN CASE
   
   unsigned int stride;  // SET THE PARALLELIZATION VARIABLES for the for loops
   unsigned int rank;
@@ -294,21 +294,21 @@ void GsmacI::calculate()
     end_i=end[i].serial();
 
     
-    vector<double> f(GsmacIlist.nn[i]);           // SWITCHING FUNCTION
-    vector<double> omega(GsmacIlist.nn[i]);       // SWITCHING FUNCTION
-    vector<Vector> domega1(GsmacIlist.nn[i]);     // ANGULAR PART1
-    vector<Vector> domega2(GsmacIlist.nn[i]);     // ANGULAR PART2
-    vector<Vector> df_a(GsmacIlist.nn[i]);        // ANGULAR PART2
-    vector<Vector> df_b(GsmacIlist.nn[i]);        // ANGULAR PART2
+    vector<double> f(GsmacILlist.nn[i]);           // SWITCHING FUNCTION
+    vector<double> omega(GsmacILlist.nn[i]);       // SWITCHING FUNCTION
+    vector<Vector> domega1(GsmacILlist.nn[i]);     // ANGULAR PART1
+    vector<Vector> domega2(GsmacILlist.nn[i]);     // ANGULAR PART2
+    vector<Vector> df_a(GsmacILlist.nn[i]);        // ANGULAR PART2
+    vector<Vector> df_b(GsmacILlist.nn[i]);        // ANGULAR PART2
     
     n=0.;
     angtot=0.;
     
     Vector dist;
 
-    for( int j=0; j < GsmacIlist.nn[i]; ++j) {    // SUM OVER NEIGHBORS
+    for( int j=0; j < GsmacILlist.nn[i]; ++j) {    // SUM OVER NEIGHBORS
       int index_j;
-      index_j=GsmacIlist.ni[i][j]-mols;           // TRUE INDEX OF THE J NEIGHBOR
+      index_j=GsmacILlist.ni[i][j]-mols;           // TRUE INDEX OF THE J NEIGHBOR
       double modij;
       dist=pbcDistance(getPosition(i),getPosition(index_j+mols));    // DISTANCE BETWEEN THEM
       modij=dist.modulo();                                              //
@@ -391,10 +391,10 @@ void GsmacI::calculate()
     }
 
    
-    for( int j=0;j<GsmacIlist.nn[i]; ++j) {                   // SUM OVER NEIGHBORS
+    for( int j=0;j<GsmacILlist.nn[i]; ++j) {                   // SUM OVER NEIGHBORS
       int index_j,start_j,end_j;
       int stride = (int)mols;
-      index_j=GsmacIlist.ni[i][j];                                      // TRUE INDEX OF THE J NEIGHBOR
+      index_j=GsmacILlist.ni[i][j];                                      // TRUE INDEX OF THE J NEIGHBOR
       start_i= i + stride + stride;
       end_i= i + stride + stride + stride;
       start_j= index_j + stride;
@@ -469,15 +469,15 @@ void GsmacI::calculate()
   
   
   
-void GsmacI::GsmacI_newlist(vector<AtomNumber> &list1, GsmacIlist_s &GsmacIlist)
+void GsmacIL::GsmacIL_newlist(vector<AtomNumber> &list1, GsmacILlist_s &GsmacILlist)
 {
   Vector rij, test;
   double mod_rij;
   
   
   for(unsigned int j=0; j<list1.size(); ++j){
-    GsmacIlist.pos1[j] = getPosition(j);
-    GsmacIlist.pos2[j] = getPosition(j+list1.size());
+    GsmacILlist.pos1[j] = getPosition(j);
+    GsmacILlist.pos2[j] = getPosition(j+list1.size());
   }
   
   unsigned int stride;
@@ -487,15 +487,15 @@ void GsmacI::GsmacI_newlist(vector<AtomNumber> &list1, GsmacIlist_s &GsmacIlist)
   rank=comm.Get_rank(); //Rank of pr
   
     for(unsigned int j=rank; j<list1.size(); j+=stride) {     // sum over grid
-      GsmacIlist.nn[j]=0; //reset nlistsize
+      GsmacILlist.nn[j]=0; //reset nlistsize
       for(unsigned int i=0; i<list1.size(); ++i) {                                           // sum over atoms
 	if(i!=j){	  
-	  rij = pbcDistance(GsmacIlist.pos1[j],GsmacIlist.pos2[i]);
+	  rij = pbcDistance(GsmacILlist.pos1[j],GsmacILlist.pos2[i]);
 	  mod_rij=rij.modulo2();
 
-	  if (mod_rij < GsmacIlist.rskin2){ //if distance < rskin
-	    GsmacIlist.ni[j][GsmacIlist.nn[j]]= i + (unsigned int) list1.size(); //index in neighlist
-	    GsmacIlist.nn[j]++; //increment nn 
+	  if (mod_rij < GsmacILlist.rskin2){ //if distance < rskin
+	    GsmacILlist.ni[j][GsmacILlist.nn[j]]= i + (unsigned int) list1.size(); //index in neighlist
+	    GsmacILlist.nn[j]++; //increment nn 
 	  }
 	}  
       }
@@ -503,37 +503,37 @@ void GsmacI::GsmacI_newlist(vector<AtomNumber> &list1, GsmacIlist_s &GsmacIlist)
     
 }
 
-void GsmacI::GsmacI_checklist(vector<AtomNumber> &list1, GsmacIlist_s &GsmacIlist)
+void GsmacIL::GsmacIL_checklist(vector<AtomNumber> &list1, GsmacILlist_s &GsmacILlist)
 {
   unsigned int j; 
-  double dr=(GsmacIlist.rskin-GsmacIlist.rcut)*0.5;
+  double dr=(GsmacILlist.rskin-GsmacILlist.rcut)*0.5;
   Vector rij;
   
   for (j=0; j<list1.size(); ++j) { 
     //check position variations of center molecules
-    rij = pbcDistance(getPosition(j),GsmacIlist.pos1[j]); 
+    rij = pbcDistance(getPosition(j),GsmacILlist.pos1[j]); 
     if( fabs(rij[0])>dr || fabs(rij[1])>dr || fabs(rij[2])>dr ) { 
-      GsmacI_newlist(list1,GsmacIlist); 
+      GsmacIL_newlist(list1,GsmacILlist); 
       break; 
     }
     //check position variations of neighbor molecules
-    rij = pbcDistance(getPosition(j+list1.size()),GsmacIlist.pos2[j]); 
+    rij = pbcDistance(getPosition(j+list1.size()),GsmacILlist.pos2[j]); 
     if( fabs(rij[0])>dr || fabs(rij[1])>dr || fabs(rij[2])>dr ) { 
-      GsmacI_newlist(list1,GsmacIlist); 
+      GsmacIL_newlist(list1,GsmacILlist); 
       break; 
     }
   }
 } 
     
-double GsmacI::norm2(Vector vect){           /// CALCULATE THE NORM OF A VECTOR
+double GsmacIL::norm2(Vector vect){           /// CALCULATE THE NORM OF A VECTOR
   return (vect[0]*vect[0]+vect[1]*vect[1]+vect[2]*vect[2]);
 }
 
-double GsmacI::dotprod(Vector vect1,Vector vect2){           /// CALCULATE THE SCALAR PRODUCT OF TWO VECTORS
+double GsmacIL::dotprod(Vector vect1,Vector vect2){           /// CALCULATE THE SCALAR PRODUCT OF TWO VECTORS
   return(vect1[0]*vect2[0]+vect1[1]*vect2[1]+vect1[2]*vect2[2]);
 }
     
-GsmacI::~GsmacI(){
+GsmacIL::~GsmacIL(){
 }
 
   }
