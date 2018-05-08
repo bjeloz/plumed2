@@ -51,35 +51,28 @@ namespace PLMD{
 
       vector<AtomNumber> start;      // LIST OF MOLECULES NEEDED BY SMACK -> START
       vector<AtomNumber> end;        // LIST OF MOLECULES NEEDED BY SMACK -> END
-      vector<AtomNumber> center1;    // LIST OF MOLECULES NEEDED BY SMACK -> CENTER1
-      //vector<AtomNumber> center2;    // LIST OF MOLECULES NEEDED BY SMACK -> CENTER2
-      vector<AtomNumber> all_atoms;  // LIST OF MOLECULES NEEDED BY SMACK -> CENTER
+      vector<AtomNumber> center;    // LIST OF MOLECULES NEEDED BY SMACK -> CENTER
+      vector<AtomNumber> all_atoms;  // LIST OF MOLECULES NEEDED BY SMACK
       vector<double> angles;
       vector<double> width;
 
-      unsigned int mols;   // total number of molecules involved in the calculations
+      unsigned int nmol;   // total number of molecules involved in the calculations
       unsigned int atoms;  // total number of atoms involved in the calculations
 
       double zetac, zetal, sigmac, sigmal; // values for kernel function
+      double zbox, zetac_c, zetal_c;
       vector<double> kval {0.0, 0.0, 0.0};  // initialize kernel function and its derivative
       vector<double> dkval {0.0, 0.0, 0.0};  // initialize kernel function and its derivative
       void kernel(double);  // kernel function
 
+      double lbound, ubound, lbound_c, ubound_c;
+      vector<double> list;  // inded list of all molecules in defined layer interval
+      unsigned int ll;      // length of list
+      void layerindices(vector<Vector>&, vector<int>&);  // index list of all molecules positioned within the defined layer interval
+      vector<Vector> pos;
+     
       ofstream fdbg;   // definition of object needed for debugging
       ofstream rdbg;
-      
-      
-      struct GsmacILlist_s {   // STRUCTURE NEEDED TO CONSTRUCT THE VERLET LIST
-	double rcut;      // CUT OFF OF THE LIST
-	double rskin;     // SKIN TO CHECK IF THE LIST HAS TO BE RECALCULATED
-	double rskin2;    // SKIN SQUARED
-	int step;
-	vector<int> nn;       // NUMBERS OF NEIGHBORS
-	vector<vector<int> > ni; // List, it's a vector of vectors, for each molecule one vector
-	vector<Vector> pos1;  // POSITIONS CENTER MOLECULE
-	vector<Vector> pos2;  // POSITIONS NEIGHBORING MOLECULES
-      } GsmacILlist;  // object of type GsmacILlist_s defined
-      
       
       GsmacIL(const ActionOptions&);              //    CONSTRUCTOR
       ~GsmacIL();                                 //    DESTRUCTOR
@@ -87,8 +80,6 @@ namespace PLMD{
       static void registerKeywords( Keywords& keys );  // KEYWORDS
       virtual void calculate();                        // CALCULATE CV 
 
-      void GsmacIL_newlist(vector<AtomNumber>&, GsmacILlist_s &GsmacILlist);   // NEW VERLIST
-      void GsmacIL_checklist(vector<AtomNumber>&, GsmacILlist_s &GsmacILlist); // CHECK THE VERLET LIST
       double dotprod(Vector,Vector);
       double norm2(Vector);
       
@@ -99,8 +90,7 @@ namespace PLMD{
     void GsmacIL::registerKeywords( Keywords& keys ){
 
       Colvar::registerKeywords(keys);
-      keys.add("atoms","CENTER1","the labels of the atoms acting as center of the molecules");
-      //keys.add("atoms","CENTER2","the labels of the atoms acting as center of the neighboring molecules");
+      keys.add("atoms","CENTER","the labels of the atoms acting as center of the molecules");
       keys.add("atoms","START","the labels of the atoms acting as start of the intramolecular vector");
       keys.add("atoms","END","the labels of the atoms acting as end  of the intramolecular vector");
       keys.add("compulsory","ANGLES"," Angles that have to be used in the SMAC calculation (need to be associated with width)");
@@ -115,6 +105,8 @@ namespace PLMD{
       keys.add("compulsory","ZETAL","liquid side boundary of the interval switching function (in fractional coordinates)");
       keys.add("compulsory","SIGMAC","crystal side width of gaussian for the interval switching function (in fractional coordinates)");
       keys.add("compulsory","SIGMAL","liquid side width of gaussian for the interval switching function (in fractional coordinates)");
+      keys.add("compulsory","LBOUND","lower bound in z direction below which molecules are not considered");
+      keys.add("compulsory","UBOUND","lower bound in z direction above which molecules are not considered");
 
       keys.remove("NOPBC");
 
@@ -168,39 +160,31 @@ namespace PLMD{
       width.resize(nAngles);
       parseVector("WIDTH",width);
 
-      parseAtomList("CENTER1",center1);
-      //parseAtomList("CENTER2",center2);
+      parseAtomList("CENTER",center);
       parseAtomList("START",start);
       parseAtomList("END",end);
 
-      parse("ZETAC",zetac);
-      parse("ZETAL",zetal);
-      parse("SIGMAC",sigmac);
-      parse("SIGMAL",sigmal);
+      parse("ZETAC", zetac);
+      parse("ZETAL", zetal);
+      parse("SIGMAC", sigmac);
+      parse("SIGMAL", sigmal);
+      parse("LBOUND", lbound);
+      parse("UBOUND", ubound);
 
-      mols=center1.size();
-      GsmacILlist.pos1.resize(mols);
-      GsmacILlist.pos2.resize(mols);
-      GsmacILlist.nn.resize(mols);
-      GsmacILlist.ni.resize(mols);
-      for(unsigned int i=0; i < mols ; i++){
-	GsmacILlist.ni[i].resize(mols);
-      }
+
+      nmol=center.size();
       
       
-      if(mols==0) error("no molecules specified");
+      if(nmol==0) error("no molecules specified");
       
-      for(unsigned int i=0 ; i < mols ; i++){
-	all_atoms.push_back(center1[i]);  // vector.push_back(element) adds element to the
+      for(unsigned int i=0 ; i < nmol ; i++){
+	all_atoms.push_back(center[i]);  // vector.push_back(element) adds element to the
       }                                   // end of the vector
-      for(unsigned int i=0 ; i < mols ; i++){
-	all_atoms.push_back(center1[i]);    // add the center twice to all_atoms vector
-      }
-      for(unsigned int i=0 ; i < mols ; i++){
+      for(unsigned int i=0 ; i < nmol ; i++){
 	all_atoms.push_back(start[i]);
       }
-      for(unsigned int i=0 ; i < mols ; i++){
-	all_atoms.push_back(end[i]);  // all_atoms is now a vector of size 4*mols
+      for(unsigned int i=0 ; i < nmol ; i++){
+	all_atoms.push_back(end[i]);  // all_atoms is now a vector of size 4*nmol
       }
       
       atoms=all_atoms.size();
@@ -213,10 +197,6 @@ namespace PLMD{
       parse("R_CUT",r_cut);
       parse("R_SKIN",r_skin);
 
-      GsmacILlist.rcut=r_cut;
-      GsmacILlist.rskin=r_skin;
-      GsmacILlist.rskin2=r_skin*r_skin;
-      GsmacILlist.step=0;
      
       checkRead();  // check that everything on the input line has been read properly,
                     // all parse command should follow before checkRead()
@@ -229,13 +209,8 @@ namespace PLMD{
 void GsmacIL::kernel(double z) {
   // switching function to limit action of Gsmac CV
 
-  // transform input values into cartesian coordinates
-  double zbox = getBox()[2][2];
-  double zetac_c = zetac*zbox;
-  double zetal_c = zetal*zbox;
-
-  double f_lc = 0;
-  double f_ll = 0;
+  double f_lc;
+  double f_ll;
 
   // get value of switching function in dependence of z
   f_lc = 1/(1 + exp(-sigmac*(z-zetac_c)));
@@ -256,10 +231,52 @@ void GsmacIL::kernel(double z) {
 }
 
 
+// parallelization not necessary
+void GsmacIL::layerindices(vector<Vector> &pos, vector<int> &list) {
+
+  unsigned int k = 0;
+
+  //unsigned int stride;
+  //unsigned int rank;
+
+  //stride = comm.Get_size();
+  //rank = comm.Get_rank();
+
+  Vector pos_i;
+  for (unsigned int i=0; i<nmol; i++) {
+  //for (unsigned int i=rank; i<nmol; i+=stride) {
+
+    pos_i = getPosition(i);
+
+    if ( (lbound_c < pos_i[2]) && (pos_i[2] < ubound_c) ) {
+      list[k] = i;  // list is the carrier of the true index i for the molecule. k is the index of the molecules in the lbound_c-ubound_c interval region.
+
+      for (unsigned int ix=0; ix<3; ix++) {
+        pos[k][ix] = pos_i[ix];   // pos has meaningful entries only up to ll
+      }
+
+      k++;
+
+    }
+  }
+
+  //comm.Sum(k);
+  ll = k;  // length of neighbour list
+
+}
+
+
     
 void GsmacIL::calculate()
 {
-  
+
+  // transform fractional coordinates into cartesian coordinates for kernel layer function
+  zbox = getBox()[2][2];
+  zetac_c = zetac*zbox;
+  zetal_c = zetal*zbox;
+  lbound_c = lbound*zbox;
+  ubound_c = ubound*zbox;
+ 
   double cv_val;   // CV
   cv_val=0;
   
@@ -267,187 +284,168 @@ void GsmacIL::calculate()
   virial.zero();   // no virial contribution
   vector<Vector> deriv(getNumberOfAtoms());  // DERIVATIVES, vector of customized Plumed vectors
   
-  if(GsmacILlist.step==0) GsmacIL_newlist(center1,GsmacILlist); // CHECK IF NEIGHBOR LIST HAVE TO BE CONSTRUCTED
-  GsmacILlist.step=1; GsmacIL_checklist(center1,GsmacILlist);   // CALL NEIGHBOR LIST IN CASE
-  
   unsigned int stride;  // SET THE PARALLELIZATION VARIABLES for the for loops
   unsigned int rank;
   
   stride=comm.Get_size();
   rank=comm.Get_rank();
+
+  vector<Vector> pos(nmol);
+  vector<int> list(nmol);
+  layerindices(pos, list);  // construct list of molecules iniside the defined interval, pos, together with the list, list, which carries the true index of the molecule.
   
+  //cout << "  ###### ll: " << ll << endl;
+
   // get the vector of each molecule
-  vector<Vector> v(getNumberOfAtoms()); 
-  for(unsigned int i = rank; i < mols; i += stride) {  // DEFINE THE INTRAMOLECULAR VECTOR
-    int start=i + (int) mols + (int) mols;  // (int) is added to mols because mols was declared before as unsigned int
-    int end=i + (int) mols + (int) mols + (int) mols;
-    v[i]=pbcDistance(getPosition(start),getPosition(end));  // THIS IS DONE ONCE PER STEP FOR ALL MOLECULES
+  vector<Vector> v(ll); 
+  for (unsigned int i = rank; i < ll; i += stride) {  // DEFINE THE INTRAMOLECULAR VECTOR
+    unsigned int start = list[i] + nmol;  // true index of vector start atom
+    unsigned int end = list[i] + 2*nmol;  // true index of vector end atom
+    v[i]=pbcDistance(getPosition(start),getPosition(end));
+
+    //cout << "v[i]: " << v[i][0] << ", " << v[i][1] << ", " << v[i][2] << endl;
+
   }
-  
+
   comm.Sum(v);  // MERGING UP
 
-  for(unsigned int i=rank;i<mols;i+=stride) {     // SUM OVER MOLECULES
-    double n,angtot;
-    int start_i,end_i;
-    double S1,S2,S3;
-    start_i=start[i].serial();
-    end_i=end[i].serial();
+  for (unsigned int i = rank; i < ll; i += stride) {    // SUM OVER MOLECULES
+    double n, angtot;
+    unsigned int start_i, end_i;
+    double S1, S2, S3;
+    start_i = start[i].serial();       // serial()??? start_i has the true index of the 
+    end_i = end[i].serial();
 
-    
-    vector<double> f(GsmacILlist.nn[i]);           // SWITCHING FUNCTION
-    vector<double> omega(GsmacILlist.nn[i]);       // SWITCHING FUNCTION
-    vector<Vector> domega1(GsmacILlist.nn[i]);     // ANGULAR PART1
-    vector<Vector> domega2(GsmacILlist.nn[i]);     // ANGULAR PART2
-    vector<Vector> df_a(GsmacILlist.nn[i]);        // ANGULAR PART2
-    vector<Vector> df_b(GsmacILlist.nn[i]);        // ANGULAR PART2
+    vector<double> f(ll);            // SWITCHING FUNCTION
+    vector<double> omega(ll);        // SWITCHING FUNCTION
+    vector<Vector> domega1(ll);      // ANGULAR PART1
+    vector<Vector> domega2(ll);      // ANGULAR PART2
+    vector<Vector> df_a(ll);         // ANGULAR PART2
+    vector<Vector> df_b(ll);         // ANGULAR PART2
     
     n=0.;
     angtot=0.;
     
     Vector dist;
 
-    for( int j=0; j < GsmacILlist.nn[i]; ++j) {    // SUM OVER NEIGHBORS
-      int index_j;
-      index_j=GsmacILlist.ni[i][j]-mols;           // TRUE INDEX OF THE J NEIGHBOR
-      double modij;
-      dist=pbcDistance(getPosition(i),getPosition(index_j+mols));    // DISTANCE BETWEEN THEM
-      modij=dist.modulo();                                              //
+    for (unsigned int j = 0; j < ll; ++j) {    // SUM OVER NEIGHBORS
+      if ( j != i ) {
+        double modij;
+        dist=pbcDistance(pos[i],pos[j]);    // DISTANCE BETWEEN THEM
+        modij=dist.modulo();                                              //
+ 
+        double zpos = pos[j][2];
+        kernel(zpos);   // calculate value of kernel function kval and its derivative dkval
+     
+        double dfunc=0.;         // CALCULATING SWITCHING FUNCTION AND 
+        double func=0.;
+        func = distanceswitch.calculate(modij,dfunc);
+        f[j] = func*kval[2];
+        n += f[j];               // CALCULATING THE COORDINATION NUMBER
 
-      Vector position = getPosition(index_j+mols);
-      double zpos = position[2];
-      kernel(zpos);   // calculate value of kernel function kval and its derivative dkval
-    
-      double dfunc=0.;         // CALCULATING SWITCHING FUNCTION AND 
-      double func=0.;
-      func = distanceswitch.calculate(modij,dfunc);
-      f[j] = func*kval[2];
-      n += f[j];               // CALCULATING THE COORDINATION NUMBER
+        for (unsigned int ix=0 ;ix<3 ;ix++) {
+          df_a[j][ix] = -dfunc*dist[ix]*kval[2];   // DERIVATIVE OF THE SWITCHING FUNCTION, what the hell?!
+          df_b[j][ix] = -dfunc*dist[ix]*kval[2] - func*dkval[ix];   // DERIVATIVE OF THE SWITCHING FUNCTION, the minus is set because of the implementation of the derivatives in the temp variable further below in the code. 
+        }
 
-      for(unsigned int ix=0 ;ix<3 ;ix++){
-	df_a[j][ix] = -dfunc*dist[ix]*kval[2];   // DERIVATIVE OF THE SWITCHING FUNCTION, what the hell?!
-	df_b[j][ix] = -dfunc*dist[ix]*kval[2] - func*dkval[ix];   // DERIVATIVE OF THE SWITCHING FUNCTION, the minus is set because of the implementation of the derivatives in the temp variable further below in the code.
+        double alpha;
+        alpha = dotprod(v[i],v[j])/sqrt(norm2(v[i])*norm2(v[j]));  //  CHANGE THIS PART IN MOR C++ STYLE
+
+        if ( alpha >= 1.0 ) {  // NOT SURE IF THIS CHECK IS NECESSARY ANYMORE. DOUBLECHECK!
+          alpha = 0.99999;
+        } else if ( alpha <= -1.0 ){
+          alpha = -0.99999;
+        }
+ 
+        double phi;
+        double domega;
+        phi = acos(alpha);
+        
+        omega[j] = 0.;
+        domega = 0.;
+        for (unsigned int k=0 ; k < angles.size() ;k++) {  // ANGULAR SERIES! NEED TO BE SUBSTITUTED WITH THE KERNEL
+          double e1;	
+          e1 = exp(-((phi - angles[k])*(phi - angles[k]))/(2*width[k]*width[k]));  // GAUSSIAN
+          omega[j]+=e1;                                            // SUM OVER GAUSSIANS
+          domega += - e1*(phi - angles[k])/(width[k]*width[k]);    // DERIVATIVE OF GAUSSIAN
+        }
+        
+        double dvac;  // PART OF THE DERIVATIVES OF THE ANGULAR TERM
+        dvac = - 1/(sqrt(norm2(v[i])*norm2(v[j]))*sqrt(1.-alpha*alpha));
+        
+        for (unsigned int ix=0 ;ix<3 ;ix++) {
+          domega1[j][ix] = - domega * dvac * (v[i][ix] - dotprod(v[i],v[j]) * v[j][ix]/norm2(v[j]));  // DERIVATIVE ANGULAR PART 1
+          domega2[j][ix] =   domega * dvac * (v[j][ix] - dotprod(v[i],v[j]) * v[i][ix]/norm2(v[i]));  // DERIVATIVE ANGULAR PART 2
+        }
+ 
+        angtot += omega[j]*f[j];    // TOTAL OF THE ANGULAR PART
 
       }
-      
-      // ANGLE BETWEEN THE DIRECTIVE VECTOR        THE INDEX ARE WRONG IN THE SCALAR PRODUCT! CHANGE THEM!                                                   
-      double alpha;
-      alpha = dotprod(v[i],v[index_j])/sqrt(norm2(v[i])*norm2(v[index_j]));    ///  CHANGE THIS PART IN MOR C++ STYLE
-      
-      if(alpha>=1.0){                                                                // NOT SURE IF THIS CHECK IS NECESSARY ANYMORE. DOUBLECHECK!
-	alpha=0.99999;
-      }else if(alpha<=-1.0){
-	alpha=-0.99999;
-      }
-
-      double phi;
-      double domega;
-      phi=acos(alpha);
-      
-      omega[j]=0.;
-      domega=0.;
-      for(unsigned int k=0 ; k < angles.size() ;k++){        // ANGULAR SERIES! NEED TO BE SUBSTITUTED WITH THE KERNEL
-	double e1;	
-	e1 = exp(-((phi - angles[k])*(phi - angles[k]))/(2*width[k]*width[k]));  // GAUSSIAN
-	omega[j]+=e1;                                                            // SUM OVE GAU
-	domega += - e1*(phi - angles[k])/(width[k]*width[k]);                    // DERIV OF GAU
-      }
-      
-      
-      double dvac;  // PART OF THE DERIVATIVES OF THE ANGULAR PART
-      dvac = - 1/(sqrt(norm2(v[i])*norm2(v[index_j]))*sqrt(1.-alpha*alpha));
-      
-      for(unsigned int ix=0 ;ix<3 ;ix++){
-	domega1[j][ix] = - domega * dvac * (v[i][ix] - dotprod(v[i],v[index_j]) * v[index_j][ix]/norm2(v[index_j]));   // DER ANGULAR PART 1
-	domega2[j][ix] =   domega * dvac * (v[index_j][ix] - dotprod(v[i],v[index_j]) * v[i][ix]/norm2(v[i]));          // DER ANGULAR PART 2
-      }
-
-      angtot += omega[j]*f[j];                                                                                       // TOTAL OF THE ANGULAR PART
-
     }
-    
 
-    
     double drho = 0.0;         
-    double rho = 0.0;             // DENSITY SWITCHING FUNCTION
+    double rho = 0.0;    // DENSITY SWITCHING FUNCTION
 
-    //if (n > 0.0) {
-      rho = coordswitch.calculate(n,drho);      // AND DERIVATIVES           
-    //}
+    rho = coordswitch.calculate(n,drho);   // AND DERIVATIVES           
 
-    Vector position = getPosition(i);
-    double zpos = position[2];
+    double zpos = pos[i][2];
     kernel(zpos);   // calculate value of kernel function kval and its derivative dkval
 
-    if(n>0.){           // THESE PARTS ARE USEFUL IN THE CALCULATION OF THE DERIVATIVES
+    if (n>0.) {           // THESE PARTS ARE USEFUL IN THE CALCULATION OF THE DERIVATIVES
       // NEW OPERATIONS TO SPEED UP
       S1 = drho * angtot;    
       S2 = -angtot/n;      
       S3 = rho*angtot/n;
-      cv_val += S3*kval[2];     // SUM THE TOTAL CV 
-    }else{
+      cv_val += S3 * kval[2];     // SUM THE TOTAL CV 
+    } else {
       S1 = 0.;
       S2 = 0.;
       S3 = 0.;
     }
 
-   
-    for( int j=0;j<GsmacILlist.nn[i]; ++j) {                   // SUM OVER NEIGHBORS
-      int index_j,start_j,end_j;
-      int stride = (int)mols;
-      index_j=GsmacILlist.ni[i][j];                                      // TRUE INDEX OF THE J NEIGHBOR
-      start_i= i + stride + stride;
-      end_i= i + stride + stride + stride;
-      start_j= index_j + stride;
-      end_j=index_j + stride + stride;
-      
-      
-      unsigned int m=3;
-      for(unsigned int ix=0 ;ix<m ;ix++) {    ///  SMAC DERIVATIVES
-	// CENTER
-        double temp = 0;
-	if (n > 0.0) {
-	  temp = ( (omega[j]  +  S2) * rho / n + S1) * kval[2]; // * df[j][ix];
-      	
-          deriv[i][ix]          +=   temp * df_a[j][ix];
-      	  deriv[index_j][ix]    -=   temp * df_b[j][ix];
+    start_i = list[i] + nmol;
+    end_i = list[i] + 2*nmol;
+
+    for (unsigned int j=0; j<ll; ++j) {    // SUM OVER NEIGHBORS
+      if (j != i) {
+        unsigned int start_j, end_j;
+  
+        start_j = list[j] + nmol;
+        end_j   = list[j] + 2*nmol;
+  
+        unsigned int m=3;
+        for (unsigned int ix=0; ix<m; ix++) {    ///  SMAC DERIVATIVES
+  	// CENTER
+          double temp = 0;
+  	if (n > 0.0) {
+  	  temp = ( (omega[j]  +  S2) * rho / n + S1) * kval[2]; // * df[j][ix];
+        	
+          deriv[list[i]][ix] += temp * df_a[j][ix];
+          deriv[list[j]][ix] -= temp * df_b[j][ix];
+
         }
-
-        /*
-        // BOX DERIVATIVES
-        dist=pbcDistance(getPosition(i),getPosition(index_j));    // DISTANCE BETWEEN THEM
- 	for(unsigned jx=0;jx<m;jx++) {
-      		 virial[ix][jx] += temp * dist[jx];
-	}
-	*/
-        
-        // START, check whether the derivatives are right or not 
-        double temp1 = 0;
-        double temp2 = 0;
-
-        if (n > 0.0) {
-	  temp1 = rho * f[j] * domega1[j][ix] / n * kval[2];
-	  temp2 = rho * f[j] * domega2[j][ix] / n * kval[2];
-          
-	  deriv[start_i][ix]   -=   temp2;     // ONLY ANGULAR PART
-	  deriv[start_j][ix]   +=   temp1;     // ONLY ANGULAR PART
-	  // END
-	  deriv[end_i][ix]     +=   temp2;     // ONLY ANGULAR PART
-	  deriv[end_j][ix]     -=   temp1;     // ONLY ANGULAR PART
+         
+          // START, check whether the derivatives are right or not 
+          double temp1 = 0;
+          double temp2 = 0;
+  
+          if (n > 0.0) {
+            temp1 = rho * f[j] * domega1[j][ix] / n * kval[2];
+            temp2 = rho * f[j] * domega2[j][ix] / n * kval[2];
+            
+            deriv[start_i][ix]   -=   temp2;     // ONLY ANGULAR PART
+            deriv[start_j][ix]   +=   temp1;     // ONLY ANGULAR PART
+  	  // END
+            deriv[end_i][ix]     +=   temp2;     // ONLY ANGULAR PART
+            deriv[end_j][ix]     -=   temp1;     // ONLY ANGULAR PART
+          }
+  
         }
-
-        /*
-        // BOX DERIVATIVES
- 	for(unsigned jx=0;jx<m;jx++) {
-          virial[ix][jx] -= temp2 * v[i][jx] ;
-          virial[ix][jx] += temp1 * v[index_j-mols][jx] ;
-	}
-        */
       }
-      
     }
 
     for (unsigned int ix=0; ix<3; ix++) {
-      deriv[i][ix]  +=  S3 * dkval[ix];
+      deriv[list[i]][ix]  +=  S3 * dkval[ix];
     }
     
   }
@@ -457,74 +455,16 @@ void GsmacIL::calculate()
   comm.Sum(cv_val);  
   comm.Sum(virial);  
 
- for(unsigned i=0;i<atoms;i++) {
-   setAtomsDerivatives(i,deriv[i]);
- }
+  for(unsigned i=0;i<atoms;i++) {
+    setAtomsDerivatives(i, deriv[i]);
+  }
   
   setBoxDerivatives(virial);
   setValue(cv_val);
   
 }
-  
-  
-  
-  
-void GsmacIL::GsmacIL_newlist(vector<AtomNumber> &list1, GsmacILlist_s &GsmacILlist)
-{
-  Vector rij, test;
-  double mod_rij;
-  
-  
-  for(unsigned int j=0; j<list1.size(); ++j){
-    GsmacILlist.pos1[j] = getPosition(j);
-    GsmacILlist.pos2[j] = getPosition(j+list1.size());
-  }
-  
-  unsigned int stride;
-  unsigned int rank; 
-  
-  stride=comm.Get_size();  //Number of processes
-  rank=comm.Get_rank(); //Rank of pr
-  
-    for(unsigned int j=rank; j<list1.size(); j+=stride) {     // sum over grid
-      GsmacILlist.nn[j]=0; //reset nlistsize
-      for(unsigned int i=0; i<list1.size(); ++i) {                                           // sum over atoms
-	if(i!=j){	  
-	  rij = pbcDistance(GsmacILlist.pos1[j],GsmacILlist.pos2[i]);
-	  mod_rij=rij.modulo2();
 
-	  if (mod_rij < GsmacILlist.rskin2){ //if distance < rskin
-	    GsmacILlist.ni[j][GsmacILlist.nn[j]]= i + (unsigned int) list1.size(); //index in neighlist
-	    GsmacILlist.nn[j]++; //increment nn 
-	  }
-	}  
-      }
-    }
-    
-}
 
-void GsmacIL::GsmacIL_checklist(vector<AtomNumber> &list1, GsmacILlist_s &GsmacILlist)
-{
-  unsigned int j; 
-  double dr=(GsmacILlist.rskin-GsmacILlist.rcut)*0.5;
-  Vector rij;
-  
-  for (j=0; j<list1.size(); ++j) { 
-    //check position variations of center molecules
-    rij = pbcDistance(getPosition(j),GsmacILlist.pos1[j]); 
-    if( fabs(rij[0])>dr || fabs(rij[1])>dr || fabs(rij[2])>dr ) { 
-      GsmacIL_newlist(list1,GsmacILlist); 
-      break; 
-    }
-    //check position variations of neighbor molecules
-    rij = pbcDistance(getPosition(j+list1.size()),GsmacILlist.pos2[j]); 
-    if( fabs(rij[0])>dr || fabs(rij[1])>dr || fabs(rij[2])>dr ) { 
-      GsmacIL_newlist(list1,GsmacILlist); 
-      break; 
-    }
-  }
-} 
-    
 double GsmacIL::norm2(Vector vect){           /// CALCULATE THE NORM OF A VECTOR
   return (vect[0]*vect[0]+vect[1]*vect[1]+vect[2]*vect[2]);
 }
